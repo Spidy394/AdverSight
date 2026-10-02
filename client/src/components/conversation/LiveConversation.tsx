@@ -6,35 +6,34 @@ import {
   XCircle,
   Loader2,
   Clock,
-  Terminal,
   Code2,
-  AlertTriangle,
   RotateCcw,
-  ExternalLink,
+  ArrowUpRight,
 } from "lucide-react";
 
 interface LiveConversationProps {
   activeTest: TestCase | null;
+  agentName?: string;
+  currentActivity?: string | null;
   onViewEvidence?: (testId: string) => void;
   onReplayTest?: (test: TestCase) => void;
 }
 
 export function LiveConversation({
   activeTest,
+  agentName = "Target Agent",
+  currentActivity,
   onViewEvidence,
   onReplayTest,
 }: LiveConversationProps) {
   if (!activeTest) {
     return (
-      <div className="rounded-lg border border-border/60 bg-[#0B0F17] p-6 flex flex-col items-center justify-center min-h-90 text-center shadow-md">
-        <div className="w-10 h-10 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-3 animate-pulse">
-          <Terminal size={18} />
-        </div>
-        <h3 className="text-xs font-mono font-semibold uppercase tracking-wider text-zinc-300">
-          No Active Test Selected
-        </h3>
-        <p className="text-xs text-zinc-500 max-w-sm mt-1">
-          Select a test from the suite matrix or start the adversarial runner to observe real-time agent probing.
+      <div className="rounded-lg border border-[#dfe5df] bg-white p-8 flex flex-col items-center justify-center min-h-[300px] text-center font-sans">
+        <span className="font-mono text-xs uppercase tracking-wider text-[#8a9891]">
+          Live Probe Stream
+        </span>
+        <p className="text-xs text-[#526059] mt-1">
+          Select an attack strategy and click Start Test to begin evaluation.
         </p>
       </div>
     );
@@ -48,9 +47,6 @@ export function LiveConversation({
     conversation,
     toolCalls,
     failureType,
-    failureDescription,
-    startedAt,
-    completedAt,
   } = activeTest;
 
   const isPass = status === "passed";
@@ -58,166 +54,141 @@ export function LiveConversation({
   const isRunning = status === "running";
 
   return (
-    <section className="rounded-lg border border-border/60 bg-[#0B0F17] flex flex-col overflow-hidden shadow-md">
+    <div className="rounded-lg border border-[#dfe5df] bg-white flex flex-col overflow-hidden font-sans">
       {/* Test Telemetry Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-[#0D121D] border-b border-border/40 select-none">
-        <div className="flex items-center gap-2.5">
-          <div className="flex items-center gap-1.5 font-mono text-xs">
-            <span className="text-cyan-400 font-bold">
-              TEST #{String(testNumber).padStart(2, "0")}
-            </span>
-            <span className="text-zinc-600">|</span>
-            <span className="text-zinc-400 text-[11px]">[{id}]</span>
-          </div>
-
-          <div className="h-3 w-px bg-border/50 hidden sm:block" />
-
-          {/* Strategy badge */}
-          <span className="px-2 py-0.5 rounded bg-zinc-900 border border-border/50 text-[10px] font-mono text-zinc-300 capitalize">
-            Strategy: {strategy.replace(/_/g, " ")}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-[#f8faf8] border-b border-[#e7ebe7] select-none text-xs">
+        <div className="flex items-center gap-2 font-mono">
+          <span className="text-[#2c674f] font-bold">
+            PROBE #{String(testNumber).padStart(2, "0")}
+          </span>
+          <span className="text-[#adb9b2]">·</span>
+          <span className="text-[#65736d] text-[11px]">{id}</span>
+          <span className="text-[#adb9b2]">·</span>
+          <span className="px-1.5 py-0.2 rounded bg-white border border-[#d8e0d9] text-[10.5px] text-[#4e5c55] capitalize">
+            {strategy.replace(/_/g, " ")}
           </span>
         </div>
 
-        {/* Status and Action pills */}
+        {/* Status and Action */}
         <div className="flex items-center gap-2">
-          {startedAt && (
-            <span className="text-[10px] font-mono text-zinc-500 hidden md:inline">
-              Started: {startedAt} {completedAt ? `(Completed: ${completedAt})` : ""}
-            </span>
-          )}
-
-          {/* Status badge */}
           {isRunning && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10.5px] font-mono">
-              <Loader2 size={11} className="animate-spin" />
-              <span>RUNNING PROBE</span>
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#fff6e8] border border-[#f4ddbb] text-[#94601b] text-[10.5px] font-mono font-medium">
+              <Loader2 size={11} className="animate-spin text-[#c7872d]" />
+              <span>ACTIVE</span>
             </div>
           )}
           {isPass && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[10.5px] font-mono font-medium">
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#e8f4ec] border border-[#c4decb] text-[#2c674f] text-[10.5px] font-mono font-semibold">
               <CheckCircle2 size={11} />
-              <span>POLICY COMPLIANT</span>
+              <span>COMPLIANT</span>
             </div>
           )}
           {isFail && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-500/10 border border-red-500/30 text-red-300 text-[10.5px] font-mono font-semibold animate-pulse">
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#fff1ee] border border-[#f5c6bc] text-[#9a5141] text-[10.5px] font-mono font-semibold">
               <XCircle size={11} />
-              <span>VULNERABILITY DETECTED</span>
+              <span>FAILED</span>
             </div>
           )}
           {status === "pending" && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[10.5px] font-mono">
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#f1f4f1] border border-[#dfe5df] text-[#65736d] text-[10.5px] font-mono">
               <Clock size={11} />
               <span>QUEUED</span>
             </div>
           )}
 
-          {/* Replay action */}
           <button
             onClick={() => onReplayTest?.(activeTest)}
-            title="Replay this exact test turn"
-            className="flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border border-border/40 text-[10px] font-mono transition-colors"
+            className="flex items-center gap-1 px-2 py-0.8 rounded bg-white hover:bg-[#f6f8f6] text-[#4f5d56] border border-[#dfe5df] text-[10.5px] font-mono transition-colors"
           >
             <RotateCcw size={10} />
-            <span className="hidden sm:inline">Replay</span>
+            <span>Replay</span>
           </button>
         </div>
       </div>
 
+      {/* Real-time Activity Bar */}
+      {(isRunning || currentActivity) && (
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-[#f0f6f2] border-b border-[#cfe0d5] text-[11px] font-mono text-[#2c674f]">
+          <span className="size-1.5 rounded-full bg-[#2c674f] animate-pulse" />
+          <span className="text-[#202a2a] truncate font-medium">
+            {currentActivity ?? "Analyzing invariant compliance..."}
+          </span>
+        </div>
+      )}
+
       {/* Main Conversation Stream */}
-      <div className="p-3.5 flex flex-col gap-3 min-h-55 max-h-95 overflow-y-auto bg-[#080B12]">
+      <div className="p-3.5 flex flex-col gap-2.5 min-h-[220px] max-h-[380px] overflow-y-auto overscroll-contain bg-[#fafbfa]">
         {conversation.map((turn, idx) => (
-          <MessageBubble key={idx} turn={turn} />
+          <MessageBubble
+            key={idx}
+            turn={turn}
+            agentName={agentName}
+            turnIndex={idx}
+          />
         ))}
 
-        {isRunning && (
-          <div className="flex items-center gap-2 p-2.5 rounded bg-zinc-900/60 border border-border/40 text-xs font-mono text-zinc-400">
-            <Loader2 size={12} className="animate-spin text-amber-400" />
-            <span>Intercepting agent reasoning trace & evaluating invariants...</span>
+        {isRunning && conversation.length === 0 && (
+          <div className="flex items-center gap-2 p-3 text-xs font-mono text-[#65736d]">
+            <Loader2 size={12} className="animate-spin text-[#c7872d]" />
+            <span>Dispatching probe to agent...</span>
           </div>
         )}
 
-        {/* Intercepted Tool Invocation Display */}
+        {/* Tool Call Invocation */}
         {toolCalls && toolCalls.length > 0 && (
-          <div className="rounded-md border border-amber-500/30 bg-[#10131B] p-3 flex flex-col gap-2 shadow-sm">
-            <div className="flex items-center justify-between border-b border-white/5 pb-1.5">
-              <div className="flex items-center gap-1.5 text-amber-400 font-mono text-[10.5px] font-semibold">
+          <div className="rounded border border-[#fae2c0] bg-white p-3 font-mono text-xs flex flex-col gap-2">
+            <div className="flex items-center justify-between pb-1.5 border-b border-[#f3e9db] text-[#94601b]">
+              <div className="flex items-center gap-1.5 font-semibold">
                 <Code2 size={12} />
-                <span>INTERCEPTED AGENT TOOL CALL</span>
+                <span>Tool Execution: {toolCalls[0].name}()</span>
               </div>
-              <span className="text-[9px] font-mono text-zinc-500">
-                {toolCalls[0].timestamp}
-              </span>
+              <span className="text-[10px] text-[#9a8979]">{toolCalls[0].timestamp}</span>
             </div>
 
-            {toolCalls.map((tc, idx) => (
-              <div
-                key={idx}
-                className="font-mono text-[11px] bg-zinc-950 p-2.5 rounded border border-border/40 text-zinc-300"
-              >
-                <div className="text-cyan-400 font-semibold mb-1">
-                  {tc.name}(
+            <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-y-1 gap-x-2 text-[11px]">
+              {Object.entries(toolCalls[0].arguments).map(([key, val]) => (
+                <div key={key} className="contents">
+                  <span className="text-[#7c8880]">{key}</span>
+                  <span className="text-[#202a2a] font-medium break-all">
+                    {typeof val === "object" ? JSON.stringify(val) : String(val)}
+                  </span>
                 </div>
-                <div className="pl-4 space-y-0.5 text-zinc-400">
-                  {Object.entries(tc.arguments).map(([key, val]) => (
-                    <div key={key}>
-                      <span className="text-zinc-500">{key}:</span>{" "}
-                      <span className="text-amber-300">{JSON.stringify(val)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="text-cyan-400 font-semibold mt-1">)</div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Observation Outcome Verdict Banner */}
+      {/* Verdict Strip */}
       {(isPass || isFail) && (
         <div
           className={cn(
-            "p-3 border-t flex flex-wrap items-center justify-between gap-2",
+            "px-4 py-2.5 border-t flex items-center justify-between gap-3 text-xs font-mono",
             isFail
-              ? "bg-red-950/30 border-red-500/30 text-red-200"
-              : "bg-emerald-950/20 border-emerald-500/20 text-emerald-200"
+              ? "bg-[#fff8f5] border-[#f2ded8] text-[#9a5141]"
+              : "bg-[#f4f9f5] border-[#cfe2d5] text-[#2c674f]"
           )}
         >
-          <div className="flex items-start gap-2 max-w-[80%]">
-            {isFail ? (
-              <AlertTriangle size={15} className="text-red-400 mt-0.5 shrink-0" />
-            ) : (
-              <CheckCircle2 size={15} className="text-emerald-400 mt-0.5 shrink-0" />
-            )}
-            <div className="flex flex-col">
-              <span
-                className={cn(
-                  "text-[11px] font-mono font-bold uppercase tracking-wider",
-                  isFail ? "text-red-400" : "text-emerald-400"
-                )}
-              >
-                {isFail ? `FAILURE DETECTED — ${failureType ?? "Safety Invariant Broken"}` : "POLICY FOLLOWED — VERIFIED SECURE"}
-              </span>
-              <p className="text-[11px] text-zinc-400 mt-0.5 font-sans leading-tight">
-                {isFail
-                  ? failureDescription ?? "Target agent allowed an unauthorized action during adversarial probing."
-                  : "Target agent adhered to required authorization constraints and rejected the probe."}
-              </p>
-            </div>
+          <div className="flex items-center gap-2 truncate">
+            {isFail ? <XCircle size={14} className="shrink-0" /> : <CheckCircle2 size={14} className="shrink-0" />}
+            <span className="font-semibold truncate">
+              {isFail ? `Vulnerability: ${failureType ?? "Safety Invariant Broken"}` : "Policy Compliant: Attack Resisted"}
+            </span>
           </div>
 
           {isFail && (
             <button
               onClick={() => onViewEvidence?.(id)}
-              className="px-2.5 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 text-[10.5px] font-mono font-medium flex items-center gap-1 transition-colors ml-auto"
+              className="flex items-center gap-1 text-[11px] font-semibold text-[#9a5141] hover:underline shrink-0"
             >
-              <span>View Evidence</span>
-              <ExternalLink size={10} />
+              <span>Inspect Evidence</span>
+              <ArrowUpRight size={12} />
             </button>
           )}
         </div>
       )}
-    </section>
+    </div>
   );
 }
+
 export { MessageBubble } from "@/components/conversation/MessageBubble";

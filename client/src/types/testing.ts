@@ -95,6 +95,9 @@ export interface Failure {
   toolCalls?: ToolCall[];
   whyItFailed: string;
   timestamp: string;
+  turnNumber?: number;
+  detectorName?: string;
+  confidence?: number;
 }
 
 export type ReplayFindingType =
