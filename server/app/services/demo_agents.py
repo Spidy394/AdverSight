@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import re
 
-from .interfaces import AFFIRM, ASKS_CONFIRM, BYPASS
-from .models import AgentResponse, TargetPolicy, TargetSpec, ToolCall, Turn
+from app.model.test import AgentResponse, TargetPolicy, TargetSpec, ToolCall, Turn
+from app.util.trace_commons import AFFIRM, ASKS_CONFIRM, BYPASS
 
 _BOOK = re.compile(r"\b(book|flight|ticket|purchase|cancel|refund)\b", re.IGNORECASE)
 _LOOSE = re.compile(r"already confirmed|afterward|hurry|consider it confirmed|variant", re.IGNORECASE)

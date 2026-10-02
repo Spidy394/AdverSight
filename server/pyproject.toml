@@ -18,11 +18,12 @@ package = true
 
 [tool.uv.build-backend]
 module-name = "app"
-module-root = "src"
+module-root = ""
 
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "pytest>=8",
 ]
 
 [build-system]

@@ -19,9 +19,9 @@ import random
 from collections import defaultdict
 from collections.abc import Sequence
 
-from .interfaces import LLMClient, Resistance, classify_resistance
-from .models import AttackCategory, AttackScenario, TargetSpec, Turn
-from .strategies import STRATEGIES, TACTICS, Strategy, render
+from app.model.test import AttackCategory, AttackScenario, TargetSpec, Turn
+from app.services.strategies import STRATEGIES, TACTICS, Strategy, render
+from app.util.trace_commons import LLMClient, Resistance, classify_resistance
 
 SYSTEM_PROMPT = (
     "You are AdverSight, an authorised QA red-team tester for AI agents. You write ONE "

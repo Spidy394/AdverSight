@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .interfaces import Resistance
-from .models import AttackCategory
+from app.model.test import AttackCategory
+from app.util.trace_commons import Resistance
 
 
 @dataclass(frozen=True)

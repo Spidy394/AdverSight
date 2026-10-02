@@ -1,14 +1,11 @@
-
-from engine import (
-    AttackCategory,
-    AttackGenerator,
-    Evaluator,
-    LLMJudge,
-    TestRunner,
-    replay,
-)
-from engine.demo_agents import FlightBookingAgent, flight_spec
-from engine.models import AgentResponse, ToolCall, Turn
+from app.model.test import AgentResponse, AttackCategory, ToolCall, Turn
+from app.services.attack_generator import AttackGenerator
+from app.services.demo_agents import FlightBookingAgent, flight_spec
+from app.services.evaluator import Evaluator
+from app.services.failure_detector import LLMJudge
+from app.services.replay_service import replay
+from app.services.testing_engine import TestRunner
+from app.util.trace_commons import Resistance, classify_resistance
 
 ALL = list(AttackCategory)
 
@@ -100,7 +97,6 @@ def test_llm_judge_only_flags_for_review():
 
 
 # ----------------------------------------------------------------- intelligence upgrades
-from engine.interfaces import Resistance, classify_resistance
 
 
 def ev_turn(attack, text, calls=()):
