@@ -57,7 +57,7 @@ export function WorkflowPipeline({ status, currentStep = 4 }: WorkflowPipelinePr
 
   return (
     <div className="w-full bg-[#0A0E17] border-b border-border/40 px-4 py-2 overflow-x-auto select-none">
-      <div className="max-w-[1700px] mx-auto flex items-center justify-between min-w-[850px] gap-2">
+      <div className="max-w-[1700px] mx-auto flex items-center justify-between min-w-212.5 gap-2">
         <div className="flex items-center gap-1.5 shrink-0 pr-2 border-r border-border/40 mr-1">
           <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
           <span className="font-mono text-[9px] uppercase tracking-widest text-zinc-400 font-semibold">

@@ -381,7 +381,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#f3f5f2] text-[#202a2a]">
       <header className="sticky top-0 z-30 border-b border-[#dfe5df] bg-white/95 backdrop-blur-sm">
-        <div className="mx-auto flex h-[68px] max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-17 max-w-360 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-[#e7efeb] text-[#28614f]">
               <Shield size={19} strokeWidth={1.8} />
@@ -411,14 +411,14 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-[1440px] flex-col gap-7 px-4 pb-12 pt-7 sm:px-6 lg:px-8">
+      <main className="mx-auto flex w-full max-w-360 flex-col gap-7 px-4 pb-12 pt-7 sm:px-6 lg:px-8">
         <section className="flex flex-col justify-between gap-5 border-b border-[#dfe5df] pb-5 sm:flex-row sm:items-end">
           <div>
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#567565]">Evaluation / {data.sessionId}</p>
             <h1 className="text-[26px] font-semibold leading-tight text-[#202a2a] sm:text-[30px]">Attack workspace</h1>
             <p className="mt-1.5 max-w-2xl text-sm leading-6 text-[#65736d]">Choose an attack goal, run it against your agent, then inspect and reproduce any security failures.</p>
           </div>
-          <label className="flex w-full flex-col gap-1.5 text-xs font-medium text-[#53615a] sm:w-[260px]">
+          <label className="flex w-full flex-col gap-1.5 text-xs font-medium text-[#53615a] sm:w-65">
             Target agent
             <select
               value={data.config.targetAgent.id}
@@ -465,7 +465,7 @@ export default function Dashboard() {
           <aside className="flex min-w-0 flex-col gap-4">
             <div className="overflow-hidden rounded-md border border-[#dfe5df] bg-white">
               <div className="border-b border-[#e7ebe7] px-4 py-3.5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#718078]">01 / Attack goal</p>
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-[#718078]">01 / Attack goal</p>
                 <h2 className="mt-1 text-[15px] font-semibold">Select a strategy</h2>
               </div>
               <div className="divide-y divide-[#edf0ed]">
@@ -481,7 +481,7 @@ export default function Dashboard() {
                       onClick={() => handleGoalSelect(goal.id)}
                       className={`flex w-full items-start gap-3 px-4 py-3 text-left transition focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-[#417b63] disabled:cursor-not-allowed disabled:opacity-60 ${selected ? "bg-[#f0f6f1]" : "bg-white hover:bg-[#f8faf8]"}`}
                     >
-                      <span className={`mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-full border ${selected ? "border-[#3e795f] bg-[#3e795f] text-white" : "border-[#bdc8bf] bg-white text-transparent"}`}><CircleDot size={12} /></span>
+                      <span className={`mt-0.5 flex size-4.5 shrink-0 items-center justify-center rounded-full border ${selected ? "border-[#3e795f] bg-[#3e795f] text-white" : "border-[#bdc8bf] bg-white text-transparent"}`}><CircleDot size={12} /></span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center justify-between gap-2 text-[13px] font-semibold text-[#2a3530]">
                           {goal.label}
@@ -520,7 +520,7 @@ export default function Dashboard() {
           <section className="flex min-w-0 flex-col overflow-hidden rounded-md border border-[#d9e1da] bg-white shadow-[0_1px_2px_rgba(25,42,32,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e5eae5] px-4 py-4 sm:px-5">
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#718078]">02 / Live attack</p>
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-[#718078]">02 / Live attack</p>
                 <h2 className="mt-1 truncate text-base font-semibold text-[#27332e]">{currentGoal?.label ?? selectedGoalDetails.label}</h2>
                 <p className="mt-0.5 truncate text-xs text-[#748078]">{activeTest ? `Probe #${String(activeTest.testNumber).padStart(2, "0")} · ${activeTest.id}` : "Waiting for an attack to start"}</p>
               </div>
@@ -544,7 +544,7 @@ export default function Dashboard() {
               <span className="font-mono tabular-nums text-[#68756d]">{data.progress.completed} of {data.progress.total} probes evaluated</span>
             </div>
 
-            <div className="flex min-h-[330px] flex-1 flex-col gap-4 bg-[#fcfdfb] p-4 sm:p-5">
+            <div className="flex min-h-82.5 flex-1 flex-col gap-4 bg-[#fcfdfb] p-4 sm:p-5">
               {activeTest ? activeTest.conversation.map((turn, index) => {
                 const isProbe = turn.role === "adversight";
                 return (
@@ -584,10 +584,10 @@ export default function Dashboard() {
         <section className="border-t border-[#dfe5df] pt-6">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#718078]">03 / Findings</p>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-[#718078]">03 / Findings</p>
               <div className="mt-1 flex items-baseline gap-2.5"><h2 className="text-lg font-semibold">Failures</h2><span className="font-mono text-xs tabular-nums text-[#7a867e]">{data.failures.length} recorded</span></div>
             </div>
-            <label className="relative block w-full sm:w-[260px]">
+            <label className="relative block w-full sm:w-65">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#87938b]" />
               <input value={failureSearch} onChange={(event) => setFailureSearch(event.target.value)} placeholder="Search failures" className="h-9 w-full rounded-md border border-[#d8e0d8] bg-white pl-9 pr-3 text-sm text-[#344139] outline-none transition placeholder:text-[#98a29b] focus:border-[#52816b] focus:ring-2 focus:ring-[#52816b]/15" />
             </label>
