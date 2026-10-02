@@ -5,15 +5,12 @@ interface DashboardLayoutProps {
 }
 
 /**
- * Three-column dashboard layout for laptop/desktop.
- * Left: config panel   Center: live session   Right: results/failures
- * Bottom: observability log (full-width)
- *
- * Collapses to single-column on tablet and below.
+ * Technical workspace layout for AdverSight.
+ * Desktop/laptop first, responsive down to tablet.
  */
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#080B12] text-zinc-100 flex flex-col font-sans">
       {children}
     </div>
   );

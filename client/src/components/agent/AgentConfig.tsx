@@ -1,300 +1,191 @@
 import { useState } from "react";
-import { motion } from "motion/react";
-import {
-  type TestSessionConfig,
-  type AttackCategory,
-  type TestMode,
-} from "@/types/testing";
-import { cn } from "@/lib/utils";
-import {
-  ChevronDown,
-  Wifi,
-  WifiOff,
-  PlayCircle,
-  Loader2,
-} from "lucide-react";
+import { type TargetAgent } from "@/types/testing";
+import { MOCK_TARGET_AGENTS } from "@/data/mockData";
+import { ChevronDown, Wifi, WifiOff, Server, Wrench, ShieldCheck, Check } from "lucide-react";
 
 interface AgentConfigProps {
-  config: TestSessionConfig;
-  onStart: () => void;
-  isRunning: boolean;
+  currentAgent: TargetAgent;
+  onAgentChange: (agent: TargetAgent) => void;
+  disabled?: boolean;
 }
 
-const ATTACK_CATEGORY_LABELS: Record<AttackCategory, string> = {
-  goal_hijacking: "Goal Hijacking",
-  identity_confusion: "Identity Confusion",
-  policy_violation: "Policy Violation",
-  unauthorized_action: "Unauthorized Action",
-  context_manipulation: "Context Manipulation",
-  tool_misuse: "Tool Misuse",
-  information_extraction: "Information Extraction",
+const AGENT_TOOLS: Record<string, string[]> = {
+  agent_flight_booking_v1: ["book_flight", "search_flights", "cancel_ticket"],
+  agent_customer_support_v1: ["fetch_account", "create_ticket", "escalate_human"],
+  agent_shopping_v1: ["search_catalog", "apply_coupon", "checkout_cart"],
+  agent_custom: ["custom_tool_01", "system_exec", "sandbox_eval"],
 };
 
-const TEST_MODE_LABELS: Record<TestMode, string> = {
-  quick_scan: "Quick Scan",
-  full_adversarial: "Full Adversarial Test",
-  custom: "Custom",
-};
+export function AgentConfig({ currentAgent, onAgentChange, disabled }: AgentConfigProps) {
+  const [isEditingCustom, setIsEditingCustom] = useState(false);
+  const [customEndpoint, setCustomEndpoint] = useState(currentAgent.endpoint);
 
-const AGENT_OPTIONS: { id: string; name: string }[] = [
-  { id: "agent_flight_booking_v1", name: "Flight Booking Agent" },
-  { id: "agent_customer_support_v1", name: "Customer Support Agent" },
-  { id: "agent_shopping_v1", name: "Shopping Agent" },
-  { id: "agent_custom", name: "Custom Agent" },
-];
-
-const ALL_CATEGORIES: AttackCategory[] = [
-  "goal_hijacking",
-  "identity_confusion",
-  "policy_violation",
-  "unauthorized_action",
-  "context_manipulation",
-  "tool_misuse",
-  "information_extraction",
-];
-
-export function AgentConfig({ config, onStart, isRunning }: AgentConfigProps) {
-  const [selectedAgent, setSelectedAgent] = useState<string>(
-    config.targetAgent.id
-  );
-  const [testMode, setTestMode] = useState<TestMode>(config.testMode);
-  const [categories, setCategories] = useState<Set<AttackCategory>>(
-    new Set(config.attackCategories)
-  );
-  const [maxTests, setMaxTests] = useState(config.maxTests);
-  const [maxTurns, setMaxTurns] = useState(config.maxTurnsPerTest);
-
-  const toggleCategory = (cat: AttackCategory) => {
-    setCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(cat)) next.delete(cat);
-      else next.add(cat);
-      return next;
-    });
+  const handleSelect = (agentId: string) => {
+    const found = MOCK_TARGET_AGENTS.find((a) => a.id === agentId);
+    if (found) {
+      onAgentChange(found);
+      if (agentId === "agent_custom") {
+        setIsEditingCustom(true);
+      } else {
+        setIsEditingCustom(false);
+      }
+    }
   };
 
+  const handleCustomEndpointSave = () => {
+    onAgentChange({
+      ...currentAgent,
+      endpoint: customEndpoint,
+      connected: true,
+    });
+    setIsEditingCustom(false);
+  };
+
+  const tools = AGENT_TOOLS[currentAgent.id] ?? ["tool_call_handler"];
+
   return (
-    <aside className="flex flex-col gap-4">
-      {/* ── Target Agent ── */}
-      <section className="rounded-lg border border-[var(--adv-border)] bg-[var(--adv-panel)] p-4 flex flex-col gap-3">
-        <header className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">
+    <section className="rounded-lg border border-border/60 bg-[#0B0F17] p-3.5 flex flex-col gap-3 shadow-md">
+      {/* Header */}
+      <div className="flex items-center justify-between pb-1 border-b border-border/30">
+        <div className="flex items-center gap-1.5">
+          <Server size={13} className="text-cyan-400" />
+          <span className="text-[10px] uppercase tracking-widest font-mono font-semibold text-zinc-300">
             Target Agent
           </span>
-        </header>
+        </div>
+        <span className="text-[9px] font-mono text-zinc-500 uppercase">
+          [ DOMAIN-AGNOSTIC ]
+        </span>
+      </div>
 
-        {/* Agent selector */}
+      {/* Target Agent Selector */}
+      <div className="flex flex-col gap-1">
+        <label htmlFor="agent-dropdown" className="text-[9.5px] uppercase font-mono tracking-wider text-zinc-400">
+          Selected Target Agent
+        </label>
         <div className="relative">
           <select
-            id="agent-selector"
-            value={selectedAgent}
-            onChange={(e) => setSelectedAgent(e.target.value)}
-            className="w-full appearance-none rounded-md border border-[var(--adv-border)] bg-[var(--adv-surface)] px-3 py-2 pr-8 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-[var(--adv-cyan)]/50 cursor-pointer"
+            id="agent-dropdown"
+            value={currentAgent.id}
+            onChange={(e) => handleSelect(e.target.value)}
+            disabled={disabled}
+            className="w-full appearance-none rounded border border-border/60 bg-zinc-900/90 px-3 py-2 pr-8 text-xs font-medium text-zinc-200 focus:outline-none focus:border-cyan-500/50 cursor-pointer disabled:opacity-60 transition-colors"
           >
-            {AGENT_OPTIONS.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
+            {MOCK_TARGET_AGENTS.map((agent) => (
+              <option key={agent.id} value={agent.id} className="bg-zinc-900 text-zinc-200">
+                {agent.name}
               </option>
             ))}
           </select>
           <ChevronDown
             size={13}
-            strokeWidth={1.5}
-            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400"
           />
         </div>
+      </div>
 
-        {/* Endpoint */}
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] text-muted-foreground uppercase tracking-wider">
-            Endpoint
-          </label>
-          <input
-            readOnly
-            value={config.targetAgent.endpoint}
-            className="rounded-md border border-[var(--adv-border)] bg-[var(--adv-surface)] px-3 py-1.5 text-xs adv-mono text-muted-foreground focus:outline-none"
-          />
-        </div>
-
-        {/* Agent type + connection */}
+      {/* Target Endpoint URL */}
+      <div className="flex flex-col gap-1">
         <div className="flex items-center justify-between">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-              Agent Type
-            </span>
-            <span className="text-xs text-foreground">Tool-Calling Agent</span>
+          <label className="text-[9.5px] uppercase font-mono tracking-wider text-zinc-400">
+            Endpoint URL
+          </label>
+          {currentAgent.id === "agent_custom" && !isEditingCustom && (
+            <button
+              onClick={() => setIsEditingCustom(true)}
+              className="text-[9px] text-cyan-400 hover:underline font-mono"
+            >
+              Edit
+            </button>
+          )}
+        </div>
+        {isEditingCustom ? (
+          <div className="flex gap-1">
+            <input
+              type="text"
+              value={customEndpoint}
+              onChange={(e) => setCustomEndpoint(e.target.value)}
+              className="flex-1 rounded border border-cyan-500/50 bg-zinc-900 px-2 py-1 text-xs font-mono text-cyan-200 focus:outline-none"
+            />
+            <button
+              onClick={handleCustomEndpointSave}
+              className="px-2 py-1 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-mono hover:bg-cyan-500/30"
+            >
+              <Check size={12} />
+            </button>
           </div>
+        ) : (
+          <div className="rounded border border-border/40 bg-zinc-900/60 px-2.5 py-1.5 text-[11px] font-mono text-zinc-300 truncate">
+            {currentAgent.endpoint}
+          </div>
+        )}
+      </div>
+
+      {/* Agent Spec & Status Matrix */}
+      <div className="grid grid-cols-2 gap-2 pt-1">
+        {/* Agent Architecture Type */}
+        <div className="rounded border border-border/40 bg-zinc-900/40 p-2 flex flex-col gap-0.5">
+          <span className="text-[8.5px] uppercase font-mono text-zinc-500 tracking-wider">
+            Agent Type
+          </span>
+          <span className="text-[11px] font-medium text-zinc-200 capitalize">
+            {currentAgent.agentType.replace(/_/g, " ")}
+          </span>
+        </div>
+
+        {/* Live Health / Connection Status */}
+        <div className="rounded border border-border/40 bg-zinc-900/40 p-2 flex flex-col gap-0.5">
+          <span className="text-[8.5px] uppercase font-mono text-zinc-500 tracking-wider">
+            Telemetry Status
+          </span>
           <div className="flex items-center gap-1.5">
-            {config.targetAgent.connected ? (
+            {currentAgent.connected ? (
               <>
-                <Wifi
-                  size={12}
-                  strokeWidth={1.5}
-                  className="text-[var(--adv-pass)]"
-                />
-                <span className="text-[11px] text-[var(--adv-pass)] font-medium">
+                <Wifi size={11} className="text-emerald-400" />
+                <span className="text-[11px] font-mono font-medium text-emerald-400">
                   Connected
                 </span>
               </>
             ) : (
               <>
-                <WifiOff size={12} strokeWidth={1.5} className="text-[var(--adv-fail)]" />
-                <span className="text-[11px] text-[var(--adv-fail)] font-medium">
+                <WifiOff size={11} className="text-red-400" />
+                <span className="text-[11px] font-mono font-medium text-red-400">
                   Offline
                 </span>
               </>
             )}
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* ── Test Configuration ── */}
-      <section className="rounded-lg border border-[var(--adv-border)] bg-[var(--adv-panel)] p-4 flex flex-col gap-4">
-        <header className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">
-          Test Configuration
-        </header>
-
-        {/* Test Mode */}
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] text-muted-foreground">Test Mode</span>
-          <div className="flex flex-col gap-1.5">
-            {(Object.keys(TEST_MODE_LABELS) as TestMode[]).map((mode) => (
-              <label
-                key={mode}
-                className="flex items-center gap-2 cursor-pointer group"
-              >
-                <div
-                  onClick={() => setTestMode(mode)}
-                  className={cn(
-                    "w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-all duration-200 cursor-pointer",
-                    testMode === mode
-                      ? "border-[var(--adv-cyan)] bg-[var(--adv-cyan)]"
-                      : "border-[var(--adv-border)] group-hover:border-[var(--adv-cyan)]/50"
-                  )}
-                >
-                  {testMode === mode && (
-                    <div className="w-1 h-1 rounded-full bg-[var(--adv-panel)]" />
-                  )}
-                </div>
-                <span className="text-xs text-foreground">
-                  {TEST_MODE_LABELS[mode]}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {/* Attack Categories */}
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] text-muted-foreground">
-            Attack Categories
+      {/* Interceptable Declared Tools */}
+      <div className="flex flex-col gap-1.5 pt-1 border-t border-border/30">
+        <div className="flex items-center justify-between text-[9.5px] font-mono text-zinc-400">
+          <span className="flex items-center gap-1 uppercase tracking-wider">
+            <Wrench size={10} className="text-amber-400" />
+            Monitored Agent Tools
           </span>
-          <div className="flex flex-col gap-1.5">
-            {ALL_CATEGORIES.map((cat) => {
-              const checked = categories.has(cat);
-              return (
-                <label
-                  key={cat}
-                  className="flex items-center gap-2 cursor-pointer group"
-                >
-                  <div
-                    onClick={() => toggleCategory(cat)}
-                    className={cn(
-                      "w-3.5 h-3.5 rounded border flex items-center justify-center transition-all duration-200 cursor-pointer",
-                      checked
-                        ? "border-[var(--adv-cyan)] bg-[var(--adv-cyan-bg)]"
-                        : "border-[var(--adv-border)] group-hover:border-[var(--adv-cyan)]/40"
-                    )}
-                  >
-                    {checked && (
-                      <svg
-                        className="text-[var(--adv-cyan)]"
-                        width="9"
-                        height="9"
-                        viewBox="0 0 10 10"
-                        fill="none"
-                      >
-                        <path
-                          d="M2 5.5L4 7.5L8 3"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    )}
-                  </div>
-                  <span
-                    className={cn(
-                      "text-[11px]",
-                      checked ? "text-foreground" : "text-muted-foreground"
-                    )}
-                  >
-                    {ATTACK_CATEGORY_LABELS[cat]}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
+          <span className="text-zinc-500 font-mono">({tools.length})</span>
         </div>
-
-        {/* Numeric controls */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wider">
-              Max Tests
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={maxTests}
-              onChange={(e) => setMaxTests(Number(e.target.value))}
-              className="rounded-md border border-[var(--adv-border)] bg-[var(--adv-surface)] px-2 py-1.5 text-sm adv-mono text-foreground focus:outline-none focus:ring-1 focus:ring-[var(--adv-cyan)]/50 w-full"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wider">
-              Turns / Test
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={maxTurns}
-              onChange={(e) => setMaxTurns(Number(e.target.value))}
-              className="rounded-md border border-[var(--adv-border)] bg-[var(--adv-surface)] px-2 py-1.5 text-sm adv-mono text-foreground focus:outline-none focus:ring-1 focus:ring-[var(--adv-cyan)]/50 w-full"
-            />
-          </div>
+        <div className="flex flex-wrap gap-1">
+          {tools.map((t) => (
+            <span
+              key={t}
+              className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-[10px] font-mono text-amber-300/90"
+            >
+              {t}()
+            </span>
+          ))}
         </div>
+      </div>
 
-        {/* Start button */}
-        <motion.button
-          id="start-adversarial-test"
-          onClick={onStart}
-          disabled={isRunning}
-          whileTap={{ scale: 0.97 }}
-          transition={{ type: "spring", stiffness: 400, damping: 20 }}
-          className={cn(
-            "w-full flex items-center justify-center gap-2 rounded-md py-2.5 text-sm font-semibold tracking-wide transition-all duration-300",
-            isRunning
-              ? "bg-[var(--adv-cyan-bg)] text-[var(--adv-cyan)] border border-[var(--adv-cyan)]/20 cursor-not-allowed"
-              : "bg-[var(--adv-cyan)] text-[var(--adv-panel)] hover:opacity-90 cursor-pointer shadow-[0_0_20px_var(--adv-cyan-bg)]"
-          )}
-        >
-          {isRunning ? (
-            <>
-              <Loader2 size={14} strokeWidth={2} className="animate-spin" />
-              Testing in progress…
-            </>
-          ) : (
-            <>
-              <PlayCircle size={14} strokeWidth={1.5} />
-              Start Adversarial Test
-            </>
-          )}
-        </motion.button>
-      </section>
-    </aside>
+      {/* Target Agent Scope Indicator */}
+      <div className="rounded bg-cyan-950/20 border border-cyan-500/20 p-2 flex items-center gap-2 text-[10.5px] text-cyan-300/90">
+        <ShieldCheck size={14} className="shrink-0 text-cyan-400" />
+        <p className="leading-tight">
+          AdverSight evaluates boundary compliance via black-box probing.
+        </p>
+      </div>
+    </section>
   );
 }
