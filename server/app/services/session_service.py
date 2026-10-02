@@ -18,8 +18,11 @@ from app.model.session import (
     AttackCategory,
     ConversationTurn,
     Failure,
+    FailureReplayResponse,
     LogEvent,
     LogEventType,
+    ReplayAttemptDetail,
+    ReplayRequest,
     SessionDashboard,
     SessionStatus,
     Severity,
@@ -34,6 +37,7 @@ from app.model.session import (
 from app.model.test import AttackCategory as EngineCat, TestResult, Turn
 from app.model.trace import LogEvent as AppModelLogEvent, ReplayCase
 from app.services.agent_adapter import get_agent_catalog, spec_for_agent
+from app.services.demo_agents import FlightBookingAgent, flight_spec
 from app.services.evaluator import Evaluator
 from app.services.event_broker import event_broker
 from app.services.replay_service import replay
@@ -62,6 +66,17 @@ class SessionStateError(SessionError):
         super().__init__(
             f"Cannot {action} session '{session_id}' while it is '{current.value}'."
         )
+
+
+class FailureNotFoundError(SessionError):
+    def __init__(self, failure_id: str) -> None:
+        self.failure_id = failure_id
+        super().__init__(f"Failure evidence '{failure_id}' does not exist.")
+
+
+class MissingReplayEvidenceError(SessionError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
 
 
 # ── Internal record ─────────────────────────────────────────────────────────────
@@ -665,6 +680,143 @@ async def replay_test_case(test_id: str) -> dict[str, Any]:
     evaluator = Evaluator()
     replay_result = await asyncio.to_thread(replay, case, agent, spec, evaluator, attempts=1)
     return replay_result.model_dump(by_alias=True)
+
+
+async def replay_failure(failure_id: str, attempts: int = 1) -> FailureReplayResponse:
+    """Execute exact replay of a previously recorded failure against its target agent."""
+    target_failure: Failure | None = None
+    target_record: SessionRecord | None = None
+
+    # 1. Lookup failure and owning session
+    async with _lock:
+        for rec in _sessions.values():
+            for f in rec.failures:
+                if f.id == failure_id:
+                    target_failure = f
+                    target_record = rec
+                    break
+            if target_failure:
+                break
+
+    if not target_failure:
+        stored_fail = await storage.failures.get(failure_id)
+        if stored_fail:
+            target_failure = stored_fail
+
+    if not target_failure:
+        raise FailureNotFoundError(failure_id)
+
+    # 2. Resolve Target Agent & Domain Spec from original session
+    if target_record:
+        agent, spec = spec_for_agent(
+            target_record.config.target_agent.id,
+            target_record.config.target_agent.name,
+            target_record.config.target_agent.endpoint,
+        )
+    else:
+        agent, spec = spec_for_agent("agent_default", "Target Agent", "")
+
+    # 3. Extract exact attacker messages (guarantees NO new attack generation)
+    attacker_messages: list[str] = []
+    if target_record:
+        test_case = next((t for t in target_record.tests if t.id == target_failure.test_id), None)
+        if test_case and test_case.conversation:
+            attacker_messages = [t.content for t in test_case.conversation if t.role == TurnRole.ADVERSIGHT]
+
+    if not attacker_messages and target_failure.attack:
+        attacker_messages = [target_failure.attack]
+
+    if not attacker_messages:
+        raise MissingReplayEvidenceError(
+            f"Failure '{failure_id}' contains no recorded attack conversation turns to replay."
+        )
+
+    # 4. Construct exact ReplayCase
+    case_id = f"replay_{target_failure.id}"
+    strategy_name = (
+        target_failure.strategy.value
+        if hasattr(target_failure.strategy, "value")
+        else str(target_failure.strategy)
+    )
+    case = ReplayCase(
+        id=case_id,
+        test_id=target_failure.test_id,
+        strategy=strategy_name,
+        target_name=spec.name,
+        attacker_messages=attacker_messages,
+        expected_failure_type=target_failure.type,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+    # 5. Execute replay using existing ReplayService & Evaluator
+    evaluator = Evaluator()
+    replay_result = await asyncio.to_thread(
+        replay, case, agent, spec, evaluator, attempts=attempts
+    )
+
+    # 6. Map attempt details
+    attempt_details: list[ReplayAttemptDetail] = []
+    for att in getattr(replay_result, "attempt_details", []):
+        last_turn = att.turns[-1] if att.turns else None
+        last_resp = last_turn.response.text if last_turn else None
+        tool_calls = (
+            [
+                ToolCall(name=tc.name, arguments=tc.arguments, timestamp=_hhmmss())
+                for t in att.turns
+                for tc in t.response.tool_calls
+            ]
+            if att.turns
+            else None
+        )
+
+        attempt_details.append(
+            ReplayAttemptDetail(
+                attempt_number=att.attempt_number,
+                reproduced=att.reproduced,
+                status="failed" if att.reproduced else "passed",
+                error=att.error,
+                response_text=last_resp,
+                tool_calls=tool_calls if tool_calls else None,
+                timestamp=_hhmmss(),
+            )
+        )
+
+    # 7. Formulate reproduction verdict
+    has_errors = any(att.error for att in attempt_details)
+    if has_errors and replay_result.reproduced_count == 0:
+        verdict = "ERROR"
+        status_val = "error"
+    else:
+        verdict = "REPRODUCED" if replay_result.reproduced else "NOT_REPRODUCED"
+        status_val = "completed"
+
+    summary_text = (
+        f"{replay_result.reproduced_count}/{replay_result.attempts} attempts reproduced the failure "
+        f"({target_failure.type}). Verdict: {verdict}."
+    )
+
+    # 8. Log and stream event if session is available
+    if target_record:
+        _append_log(
+            target_record,
+            LogEventType.POLICY_CHECK,
+            f"Replay verified for {failure_id}: {verdict} ({replay_result.reproduced_count}/{replay_result.attempts})",
+        )
+
+    return FailureReplayResponse(
+        failure_id=target_failure.id,
+        status=status_val,
+        verdict=verdict,
+        reproduced=replay_result.reproduced,
+        attempts=replay_result.attempts,
+        successful_reproductions=replay_result.reproduced_count,
+        reproduction_rate=replay_result.reproduction_rate,
+        original_failure_type=target_failure.type,
+        original_test_id=target_failure.test_id,
+        replay_case_id=case_id,
+        summary=summary_text,
+        replay_results=attempt_details,
+    )
 
 
 def get_available_agents() -> list[dict[str, Any]]:

@@ -31,6 +31,7 @@ from pydantic.alias_generators import to_camel
 class TestStatus(StrEnum):
     """TS: ``TestStatus``."""
 
+    __test__ = False
     PENDING = "pending"
     RUNNING = "running"
     PASSED = "passed"
@@ -135,6 +136,7 @@ class TargetAgent(AdverSightModel):
 class TestSessionConfig(AdverSightModel):
     """TS: ``TestSessionConfig``."""
 
+    __test__ = False
     target_agent: TargetAgent
     test_mode: TestMode
     attack_categories: list[AttackCategory] = Field(default_factory=list)
@@ -249,3 +251,46 @@ class SessionCreate(AdverSightModel):
     """Body of ``POST /api/v1/sessions``."""
 
     config: TestSessionConfig
+
+
+# ── Replay Contracts ────────────────────────────────────────────────────────────
+
+
+class ReplayRequest(AdverSightModel):
+    """Configuration for replaying a recorded failure or test."""
+
+    attempts: int = Field(
+        default=1,
+        ge=1,
+        le=10,
+        description="Number of replay attempts to verify reproduction consistency (1-10)",
+    )
+
+
+class ReplayAttemptDetail(AdverSightModel):
+    """Detailed observation of a single replay attempt."""
+
+    attempt_number: int
+    reproduced: bool
+    status: str
+    error: str | None = None
+    response_text: str | None = None
+    tool_calls: list[ToolCall] | None = None
+    timestamp: str | None = None
+
+
+class FailureReplayResponse(AdverSightModel):
+    """Structured result of replaying a previously recorded failure."""
+
+    failure_id: str
+    status: str  # "completed" | "error"
+    verdict: str  # "REPRODUCED" | "NOT_REPRODUCED" | "ERROR"
+    reproduced: bool
+    attempts: int
+    successful_reproductions: int
+    reproduction_rate: float
+    original_failure_type: str
+    original_test_id: str
+    replay_case_id: str
+    summary: str
+    replay_results: list[ReplayAttemptDetail] = Field(default_factory=list)

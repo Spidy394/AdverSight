@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from app.model.failure import FAILURE_LABELS, Failure, Verdict
 from app.model.test import TargetSpec, TestResult, ToolCall, Turn
-from app.model.trace import ReplayCase, ReplayResult
+from app.model.trace import ReplayAttempt, ReplayCase, ReplayResult
 from app.services.evaluator import Evaluator
 from app.util.trace_commons import TargetAgent, utcnow_iso
 
@@ -64,15 +64,36 @@ def replay(
     LLM targets are non-deterministic, so ``attempts > 1`` reports how often the failure recurs.
     """
     hits, last_turns, last_findings = 0, [], []
-    for _ in range(max(1, attempts)):
-        turns: list[Turn] = []
-        for msg in case.attacker_messages:
-            turns.append(Turn(attack=msg, response=agent.respond(msg, list(turns))))
-        verdict = evaluator.evaluate(spec, turns)
-        if any(f.type.value == case.expected_failure_type for f in verdict.findings):
-            hits += 1
-        last_turns, last_findings = turns, verdict.findings
+    attempt_details: list[ReplayAttempt] = []
     n = max(1, attempts)
+    for attempt_idx in range(1, n + 1):
+        turns: list[Turn] = []
+        attempt_error: str | None = None
+        reproduced = False
+        findings = []
+        try:
+            for msg in case.attacker_messages:
+                turns.append(Turn(attack=msg, response=agent.respond(msg, list(turns))))
+            verdict = evaluator.evaluate(spec, turns)
+            reproduced = any(f.type.value == case.expected_failure_type for f in verdict.findings)
+            findings = verdict.findings
+        except Exception as exc:  # noqa: BLE001
+            attempt_error = str(exc)
+
+        if reproduced:
+            hits += 1
+
+        last_turns, last_findings = turns, findings
+        attempt_details.append(
+            ReplayAttempt(
+                attempt_number=attempt_idx,
+                reproduced=reproduced,
+                turns=turns,
+                findings=findings,
+                error=attempt_error,
+            )
+        )
+
     return ReplayResult(
         replay_case_id=case.id,
         reproduced=hits > 0,
@@ -82,4 +103,5 @@ def replay(
         attempts=n,
         reproduced_count=hits,
         reproduction_rate=hits / n,
+        attempt_details=attempt_details,
     )

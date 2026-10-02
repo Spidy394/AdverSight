@@ -1,9 +1,9 @@
-"""Failure Evidence routes."""
+"""Failure Evidence and Exact Replay routes."""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.model.session import Failure
+from app.model.session import Failure, FailureReplayResponse, ReplayRequest
 from app.services import session_service as service
 
 router = APIRouter(tags=["failures"])
@@ -19,3 +19,43 @@ async def get_failure(failure_id: str) -> Failure:
             detail=f"Failure evidence '{failure_id}' not found.",
         )
     return failure
+
+
+@router.post(
+    "/{failure_id}/replay",
+    response_model=FailureReplayResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Replay a recorded failure",
+    description=(
+        "Executes an exact replay of a previously detected failure against its target agent "
+        "using recorded attacker turns without generating new attacks, and evaluates reproduction consistency."
+    ),
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Failure evidence record was not found."},
+        422: {
+            "description": "Invalid replay configuration (attempts out of 1-10 range) or missing conversation evidence."
+        },
+    },
+)
+async def replay_failure(
+    failure_id: str,
+    payload: ReplayRequest = ReplayRequest(),
+) -> FailureReplayResponse:
+    """Execute exact deterministic replay of a recorded failure."""
+    try:
+        return await service.replay_failure(failure_id=failure_id, attempts=payload.attempts)
+    except service.FailureNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except service.MissingReplayEvidenceError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Replay execution failed: {exc}",
+        ) from exc

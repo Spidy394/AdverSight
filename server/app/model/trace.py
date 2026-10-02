@@ -26,6 +26,14 @@ class ReplayCase(Model):
     created_at: str
 
 
+class ReplayAttempt(Model):
+    attempt_number: int
+    reproduced: bool
+    turns: list[Turn] = Field(default_factory=list)
+    findings: list[Finding] = Field(default_factory=list)
+    error: str | None = None
+
+
 class ReplayResult(Model):
     replay_case_id: str
     reproduced: bool
@@ -35,6 +43,7 @@ class ReplayResult(Model):
     attempts: int = 1
     reproduced_count: int = 0
     reproduction_rate: float = 0.0  # LLM targets are non-deterministic: report how often it recurs
+    attempt_details: list[ReplayAttempt] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- report
