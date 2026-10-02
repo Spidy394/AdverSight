@@ -25,6 +25,8 @@ export type AgentType =
   | "llm_chain"
   | "custom";
 
+export type TargetAgentKind = "demo_vulnerable" | "demo_secure" | "http";
+
 // ── Target Agent ──────────────────────────────────────────────────────────────
 
 export interface TargetAgent {
@@ -33,6 +35,8 @@ export interface TargetAgent {
   endpoint: string;
   agentType: AgentType;
   connected: boolean;
+  kind?: TargetAgentKind;
+  requestTimeoutSeconds?: number;
 }
 
 // ── Test Session Config ───────────────────────────────────────────────────────

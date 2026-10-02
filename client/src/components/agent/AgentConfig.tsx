@@ -1,7 +1,6 @@
-import { useState } from "react";
-import { type TargetAgent } from "@/types/testing";
-import { MOCK_TARGET_AGENTS } from "@/data/mockData";
-import { ChevronDown, Wifi, WifiOff, Server, Wrench, ShieldCheck, Check } from "lucide-react";
+import type { TargetAgent, TargetAgentKind } from "@/types/testing";
+import { getTargetAgentErrors } from "@/lib/targetAgent";
+import { CircleDot, Server, ShieldCheck } from "lucide-react";
 
 interface AgentConfigProps {
   currentAgent: TargetAgent;
@@ -9,182 +8,155 @@ interface AgentConfigProps {
   disabled?: boolean;
 }
 
-const AGENT_TOOLS: Record<string, string[]> = {
-  agent_flight_booking_v1: ["book_flight", "search_flights", "cancel_ticket"],
-  agent_customer_support_v1: ["fetch_account", "create_ticket", "escalate_human"],
-  agent_shopping_v1: ["search_catalog", "apply_coupon", "checkout_cart"],
-  agent_custom: ["custom_tool_01", "system_exec", "sandbox_eval"],
-};
+const TARGET_MODES: { id: TargetAgentKind; label: string }[] = [
+  { id: "demo_vulnerable", label: "Vulnerable Demo" },
+  { id: "demo_secure", label: "Secure Demo" },
+  { id: "http", label: "Custom HTTP Agent" },
+];
 
 export function AgentConfig({ currentAgent, onAgentChange, disabled }: AgentConfigProps) {
-  const [isEditingCustom, setIsEditingCustom] = useState(false);
-  const [customEndpoint, setCustomEndpoint] = useState(currentAgent.endpoint);
+  const currentKind = currentAgent.kind ?? "demo_vulnerable";
+  const isCustom = currentKind === "http";
+  const errors = getTargetAgentErrors(currentAgent);
+  const isConfigured = Object.keys(errors).length === 0;
 
-  const handleSelect = (agentId: string) => {
-    const found = MOCK_TARGET_AGENTS.find((a) => a.id === agentId);
-    if (found) {
-      onAgentChange(found);
-      if (agentId === "agent_custom") {
-        setIsEditingCustom(true);
-      } else {
-        setIsEditingCustom(false);
-      }
+  const selectKind = (kind: TargetAgentKind) => {
+    if (kind === currentKind) return;
+    if (kind === "http") {
+      onAgentChange({
+        id: "agent_custom",
+        name: "",
+        endpoint: "",
+        agentType: "custom",
+        connected: false,
+        kind,
+        requestTimeoutSeconds: 30,
+      });
+      return;
     }
-  };
 
-  const handleCustomEndpointSave = () => {
+    const isSecure = kind === "demo_secure";
     onAgentChange({
-      ...currentAgent,
-      endpoint: customEndpoint,
+      id: isSecure ? "agent_flight_booking_secure" : "agent_flight_booking_vulnerable",
+      name: "Flight Booking Agent",
+      endpoint: isSecure
+        ? "http://localhost:8000/secure-agent"
+        : "http://localhost:8000/vulnerable-agent",
+      agentType: "tool_calling",
       connected: true,
+      kind,
     });
-    setIsEditingCustom(false);
   };
-
-  const tools = AGENT_TOOLS[currentAgent.id] ?? ["tool_call_handler"];
 
   return (
-    <section className="rounded-lg border border-border/60 bg-[#0B0F17] p-3.5 flex flex-col gap-3 shadow-md">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-1 border-b border-border/30">
-        <div className="flex items-center gap-1.5">
-          <Server size={13} className="text-cyan-400" />
-          <span className="text-[10px] uppercase tracking-widest font-mono font-semibold text-zinc-300">
-            Target Agent
-          </span>
-        </div>
-        <span className="text-[9px] font-mono text-zinc-500 uppercase">
-          [ DOMAIN-AGNOSTIC ]
-        </span>
+    <section className="flex flex-col gap-4 rounded-md border border-[#dfe5df] bg-white p-4">
+      <div className="flex items-center gap-2 border-b border-[#e7ebe7] pb-3">
+        <Server size={15} className="text-[#47765c]" />
+        <h2 className="text-sm font-semibold text-[#2a3530]">What AI agent are you testing?</h2>
       </div>
 
-      {/* Target Agent Selector */}
-      <div className="flex flex-col gap-1">
-        <label htmlFor="agent-dropdown" className="text-[9.5px] uppercase font-mono tracking-wider text-zinc-400">
-          Selected Target Agent
-        </label>
-        <div className="relative">
-          <select
-            id="agent-dropdown"
-            value={currentAgent.id}
-            onChange={(e) => handleSelect(e.target.value)}
-            disabled={disabled}
-            className="w-full appearance-none rounded border border-border/60 bg-zinc-900/90 px-3 py-2 pr-8 text-xs font-medium text-zinc-200 focus:outline-none focus:border-cyan-500/50 cursor-pointer disabled:opacity-60 transition-colors"
-          >
-            {MOCK_TARGET_AGENTS.map((agent) => (
-              <option key={agent.id} value={agent.id} className="bg-zinc-900 text-zinc-200">
-                {agent.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            size={13}
-            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400"
-          />
+      <fieldset disabled={disabled} className="flex flex-col gap-2 disabled:opacity-60">
+        <legend className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#718078]">
+          Agent type
+        </legend>
+        <div role="radiogroup" className="grid gap-1.5">
+          {TARGET_MODES.map((mode) => {
+            const selected = currentKind === mode.id;
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => selectKind(mode.id)}
+                className={`flex min-h-10 items-center gap-2.5 rounded border px-3 text-left text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#417b63] ${selected ? "border-[#80a58b] bg-[#eff5f0] text-[#315b42]" : "border-[#e2e8e2] bg-white text-[#647169] hover:bg-[#f7f9f7]"}`}
+              >
+                <CircleDot size={14} className={selected ? "text-[#3f7554]" : "text-[#aab4ac]"} />
+                {mode.label}
+              </button>
+            );
+          })}
         </div>
-      </div>
+      </fieldset>
 
-      {/* Target Endpoint URL */}
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <label className="text-[9.5px] uppercase font-mono tracking-wider text-zinc-400">
-            Endpoint URL
-          </label>
-          {currentAgent.id === "agent_custom" && !isEditingCustom && (
-            <button
-              onClick={() => setIsEditingCustom(true)}
-              className="text-[9px] text-cyan-400 hover:underline font-mono"
-            >
-              Edit
-            </button>
-          )}
+      <div className="flex flex-col gap-3 border-t border-[#e7ebe7] pt-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#718078]">Agent</p>
+          <p className="mt-1 text-sm font-semibold text-[#2a3530]">
+            {isCustom ? currentAgent.name || "Name your agent" : "Flight Booking Agent"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[#748078]">
+            {currentKind === "demo_vulnerable"
+              ? "Intentionally vulnerable agent for demonstrating AdverSight failure discovery."
+              : currentKind === "demo_secure"
+                ? "Hardened reference agent used to validate false-positive behavior."
+                : "Configure a JSON HTTP endpoint. This target remains in local simulation until the backend provides an HTTP adapter."}
+          </p>
         </div>
-        {isEditingCustom ? (
-          <div className="flex gap-1">
-            <input
-              type="text"
-              value={customEndpoint}
-              onChange={(e) => setCustomEndpoint(e.target.value)}
-              className="flex-1 rounded border border-cyan-500/50 bg-zinc-900 px-2 py-1 text-xs font-mono text-cyan-200 focus:outline-none"
-            />
-            <button
-              onClick={handleCustomEndpointSave}
-              className="px-2 py-1 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-mono hover:bg-cyan-500/30"
-            >
-              <Check size={12} />
-            </button>
-          </div>
-        ) : (
-          <div className="rounded border border-border/40 bg-zinc-900/60 px-2.5 py-1.5 text-[11px] font-mono text-zinc-300 truncate">
-            {currentAgent.endpoint}
+
+        {isCustom && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[#53615a] sm:col-span-2">
+              Agent name
+              <input
+                value={currentAgent.name}
+                onChange={(event) => onAgentChange({ ...currentAgent, name: event.target.value })}
+                disabled={disabled}
+                aria-invalid={Boolean(errors.name)}
+                aria-describedby={errors.name ? "target-agent-name-error" : undefined}
+                className="h-9 w-full rounded-md border border-[#d5ddd6] bg-white px-3 text-sm font-normal text-[#27332e] outline-none focus:border-[#52816b] focus:ring-2 focus:ring-[#52816b]/15 disabled:cursor-not-allowed"
+                placeholder="My Customer Support Agent"
+              />
+              {errors.name && <span id="target-agent-name-error" className="text-[11px] font-normal text-[#a24f3e]">{errors.name}</span>}
+            </label>
+            {!disabled ? (
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[#53615a] sm:col-span-2">
+                Endpoint
+                <input
+                  value={currentAgent.endpoint}
+                  onChange={(event) => onAgentChange({ ...currentAgent, endpoint: event.target.value })}
+                  aria-invalid={Boolean(errors.endpoint)}
+                  aria-describedby={errors.endpoint ? "target-agent-endpoint-error" : undefined}
+                  className="h-9 w-full rounded-md border border-[#d5ddd6] bg-white px-3 font-mono text-xs font-normal text-[#27332e] outline-none focus:border-[#52816b] focus:ring-2 focus:ring-[#52816b]/15"
+                  placeholder="https://example.com/agent"
+                  inputMode="url"
+                />
+                {errors.endpoint && <span id="target-agent-endpoint-error" className="text-[11px] font-normal text-[#a24f3e]">{errors.endpoint}</span>}
+              </label>
+            ) : (
+              <p className="text-xs text-[#748078] sm:col-span-2">Endpoint configured for this session</p>
+            )}
+            <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-[#53615a]">
+              Request timeout (seconds)
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={currentAgent.requestTimeoutSeconds ?? ""}
+                onChange={(event) => onAgentChange({ ...currentAgent, requestTimeoutSeconds: Number(event.target.value) })}
+                disabled={disabled}
+                aria-invalid={Boolean(errors.timeout)}
+                aria-describedby={errors.timeout ? "target-agent-timeout-error" : undefined}
+                className="h-9 w-full rounded-md border border-[#d5ddd6] bg-white px-3 text-sm font-normal tabular-nums text-[#27332e] outline-none focus:border-[#52816b] focus:ring-2 focus:ring-[#52816b]/15 disabled:cursor-not-allowed"
+              />
+              {errors.timeout && <span id="target-agent-timeout-error" className="text-[11px] font-normal text-[#a24f3e]">{errors.timeout}</span>}
+            </label>
           </div>
         )}
-      </div>
 
-      {/* Agent Spec & Status Matrix */}
-      <div className="grid grid-cols-2 gap-2 pt-1">
-        {/* Agent Architecture Type */}
-        <div className="rounded border border-border/40 bg-zinc-900/40 p-2 flex flex-col gap-0.5">
-          <span className="text-[8.5px] uppercase font-mono text-zinc-500 tracking-wider">
-            Agent Type
-          </span>
-          <span className="text-[11px] font-medium text-zinc-200 capitalize">
-            {currentAgent.agentType.replace(/_/g, " ")}
+        <div className="flex items-center justify-between gap-3 border-t border-[#edf0ed] pt-3">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#718078]">Status</span>
+          <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${isConfigured ? "text-[#477655]" : "text-[#a45e3e]"}`}>
+            <span className={`size-1.5 rounded-full ${isConfigured ? "bg-[#4c8060]" : "bg-[#bb7a44]"}`} />
+            {isConfigured ? (isCustom ? "Configured" : "Ready") : "Needs configuration"}
           </span>
         </div>
-
-        {/* Live Health / Connection Status */}
-        <div className="rounded border border-border/40 bg-zinc-900/40 p-2 flex flex-col gap-0.5">
-          <span className="text-[8.5px] uppercase font-mono text-zinc-500 tracking-wider">
-            Telemetry Status
-          </span>
-          <div className="flex items-center gap-1.5">
-            {currentAgent.connected ? (
-              <>
-                <Wifi size={11} className="text-emerald-400" />
-                <span className="text-[11px] font-mono font-medium text-emerald-400">
-                  Connected
-                </span>
-              </>
-            ) : (
-              <>
-                <WifiOff size={11} className="text-red-400" />
-                <span className="text-[11px] font-mono font-medium text-red-400">
-                  Offline
-                </span>
-              </>
-            )}
+        {isCustom && (
+          <div role="note" className="flex items-start gap-2 rounded border border-[#e7e5d8] bg-[#fbfaf4] p-2.5 text-[11px] leading-4 text-[#756d50]">
+            <ShieldCheck size={14} className="mt-0.5 shrink-0" />
+            <p>Simulation mode will not send requests to this endpoint. Timeout is saved locally because the current session API does not define a timeout field.</p>
           </div>
-        </div>
-      </div>
-
-      {/* Interceptable Declared Tools */}
-      <div className="flex flex-col gap-1.5 pt-1 border-t border-border/30">
-        <div className="flex items-center justify-between text-[9.5px] font-mono text-zinc-400">
-          <span className="flex items-center gap-1 uppercase tracking-wider">
-            <Wrench size={10} className="text-amber-400" />
-            Monitored Agent Tools
-          </span>
-          <span className="text-zinc-500 font-mono">({tools.length})</span>
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {tools.map((t) => (
-            <span
-              key={t}
-              className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-[10px] font-mono text-amber-300/90"
-            >
-              {t}()
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Target Agent Scope Indicator */}
-      <div className="rounded bg-cyan-950/20 border border-cyan-500/20 p-2 flex items-center gap-2 text-[10.5px] text-cyan-300/90">
-        <ShieldCheck size={14} className="shrink-0 text-cyan-400" />
-        <p className="leading-tight">
-          AdverSight evaluates boundary compliance via black-box probing.
-        </p>
+        )}
       </div>
     </section>
   );

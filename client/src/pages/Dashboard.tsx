@@ -9,9 +9,10 @@ import {
 } from "@/types/testing";
 import {
   mockDashboardData,
-  MOCK_TARGET_AGENTS,
   SIMULATED_TEST_RUNS,
 } from "@/data/mockData";
+import { AgentConfig } from "@/components/agent/AgentConfig";
+import { getTargetAgentErrors, targetAgentLabel } from "@/lib/targetAgent";
 import {
   createSession,
   startSession,
@@ -36,7 +37,6 @@ import {
   Shield,
   ShieldCheck,
   Square,
-  Wifi,
   WifiOff,
   XCircle,
 } from "lucide-react";
@@ -387,37 +387,39 @@ export default function Dashboard() {
   // Start / Resume Simulation or Backend Execution
   const handleStart = async () => {
     if (data.status === "testing") return;
-    if (!data.config.targetAgent.connected) return;
+    if (Object.keys(getTargetAgentErrors(data.config.targetAgent)).length > 0) return;
 
-    // 1. Attempt Real Backend Execution with SSE
-    try {
-      const newSession = await createSession(data.config);
-      currentSessionIdRef.current = newSession.sessionId;
+    // The current backend only dispatches the two in-process flight demo agents.
+    if (data.config.targetAgent.kind !== "http") {
+      try {
+        const newSession = await createSession(data.config);
+        currentSessionIdRef.current = newSession.sessionId;
 
-      if (streamCleanupRef.current) {
-        streamCleanupRef.current();
-        streamCleanupRef.current = null;
+        if (streamCleanupRef.current) {
+          streamCleanupRef.current();
+          streamCleanupRef.current = null;
+        }
+
+        const disconnect = connectToSessionStream(
+          newSession.sessionId,
+          (evt) => handleIncomingServerEvent(evt),
+          (err) => console.warn("SSE connection error:", err),
+        );
+        streamCleanupRef.current = disconnect;
+
+        await startSession(newSession.sessionId);
+        setData((prev) => ({
+          ...prev,
+          status: "testing",
+          sessionId: newSession.sessionId,
+        }));
+        return;
+      } catch (err) {
+        console.warn(
+          "Backend unavailable, falling back to local simulation:",
+          err,
+        );
       }
-
-      const disconnect = connectToSessionStream(
-        newSession.sessionId,
-        (evt) => handleIncomingServerEvent(evt),
-        (err) => console.warn("SSE connection error:", err),
-      );
-      streamCleanupRef.current = disconnect;
-
-      await startSession(newSession.sessionId);
-      setData((prev) => ({
-        ...prev,
-        status: "testing",
-        sessionId: newSession.sessionId,
-      }));
-      return;
-    } catch (err) {
-      console.warn(
-        "Backend unavailable, falling back to local simulation:",
-        err,
-      );
     }
 
     // 2. Fallback to local simulation if backend is not running
@@ -484,16 +486,6 @@ export default function Dashboard() {
         targetAgent: newAgent,
       },
     }));
-
-    // Add telemetry log
-    const now = new Date().toTimeString().slice(0, 8);
-    const newLog: LogEvent = {
-      id: `log_agent_${Date.now()}`,
-      timestamp: now,
-      type: "SESSION_STARTED",
-      message: `Target agent switched to ${newAgent.name} (${newAgent.endpoint})`,
-    };
-    setData((prev) => ({ ...prev, logs: [...prev.logs, newLog] }));
   };
 
   // Execute a single test step in state
@@ -578,7 +570,7 @@ export default function Dashboard() {
           id: `log_${Date.now()}_1`,
           timestamp: now,
           type: "REQUEST_SENT",
-          message: `Probe #${foundTest?.testNumber} dispatched to ${prev.config.targetAgent.endpoint}`,
+          message: `Probe #${foundTest?.testNumber} dispatched for ${prev.config.targetAgent.name}`,
           testId: testId,
         },
         {
@@ -837,26 +829,13 @@ export default function Dashboard() {
               reproduce any security failures.
             </p>
           </div>
-          <label className="flex w-full flex-col gap-1.5 text-xs font-medium text-[#53615a] sm:w-65">
-            Target agent
-            <select
-              value={data.config.targetAgent.id}
-              disabled={isRunning}
-              onChange={(event) => {
-                const agent = MOCK_TARGET_AGENTS.find(
-                  (candidate) => candidate.id === event.target.value,
-                );
-                if (agent) handleAgentChange(agent);
-              }}
-              className="h-10 w-full rounded-md border border-[#d5ddd6] bg-white px-3 text-sm text-[#27332e] shadow-sm outline-none transition focus:border-[#52816b] focus:ring-2 focus:ring-[#52816b]/15 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {MOCK_TARGET_AGENTS.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="min-w-0 border-l border-[#dfe5df] pl-4 sm:min-w-55">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#718078]">Target agent</p>
+            <p className="mt-1 truncate text-sm font-semibold text-[#2a3530]">{data.config.targetAgent.name || "Name your agent"}</p>
+            <p className="mt-0.5 text-xs text-[#748078]">
+              {targetAgentLabel(data.config.targetAgent.kind)} · {data.config.targetAgent.kind === "http" ? (Object.keys(getTargetAgentErrors(data.config.targetAgent)).length === 0 ? "Configured" : "Needs configuration") : "Ready"}
+            </p>
+          </div>
         </section>
 
         <nav
@@ -895,7 +874,7 @@ export default function Dashboard() {
           })}
         </nav>
 
-        {!data.config.targetAgent.connected && (
+        {data.config.targetAgent.kind !== "http" && !data.config.targetAgent.connected && (
           <div
             role="alert"
             className="flex items-start gap-3 border border-[#e7c9ad] bg-[#fff8ef] px-4 py-3 text-sm text-[#80562f]"
@@ -978,30 +957,11 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="rounded-md border border-[#dfe5df] bg-white px-4 py-3.5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  {data.config.targetAgent.connected ? (
-                    <Wifi size={16} className="shrink-0 text-[#4c8060]" />
-                  ) : (
-                    <WifiOff size={16} className="shrink-0 text-[#ad684c]" />
-                  )}
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">
-                      {data.config.targetAgent.name}
-                    </p>
-                    <p className="truncate font-mono text-[10px] text-[#7b8780]">
-                      {data.config.targetAgent.endpoint}
-                    </p>
-                  </div>
-                </div>
-                <span
-                  className={`shrink-0 text-[10px] font-semibold ${data.config.targetAgent.connected ? "text-[#477655]" : "text-[#ad684c]"}`}
-                >
-                  {data.config.targetAgent.connected ? "Connected" : "Offline"}
-                </span>
-              </div>
-            </div>
+            <AgentConfig
+              currentAgent={data.config.targetAgent}
+              onAgentChange={handleAgentChange}
+              disabled={isRunning}
+            />
           </aside>
 
           <section className="flex min-w-0 flex-col overflow-hidden rounded-md border border-[#d9e1da] bg-white shadow-[0_1px_2px_rgba(25,42,32,0.04)]">
@@ -1043,7 +1003,7 @@ export default function Dashboard() {
                   <button
                     onClick={handleStart}
                     disabled={
-                      !data.config.targetAgent.connected ||
+                      Object.keys(getTargetAgentErrors(data.config.targetAgent)).length > 0 ||
                       queuedGoalCount === 0
                     }
                     className="inline-flex h-10 items-center gap-2 rounded-md bg-[#326a51] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#285941] active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#326a51] disabled:cursor-not-allowed disabled:bg-[#a5b6a9]"

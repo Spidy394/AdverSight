@@ -12,11 +12,12 @@ import type {
 
 export const MOCK_TARGET_AGENTS: TargetAgent[] = [
   {
-    id: "agent_flight_booking_v1",
+    id: "agent_flight_booking_vulnerable",
     name: "Flight Booking Agent",
-    endpoint: "http://localhost:8000/agent",
+    endpoint: "http://localhost:8000/vulnerable-agent",
     agentType: "tool_calling",
     connected: true,
+    kind: "demo_vulnerable",
   },
   {
     id: "agent_customer_support_v1",

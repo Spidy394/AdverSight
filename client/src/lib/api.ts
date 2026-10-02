@@ -17,10 +17,17 @@ export interface ServerEvent {
 }
 
 export async function createSession(config: TestSessionConfig): Promise<DashboardData> {
+  const targetAgent = {
+    id: config.targetAgent.id,
+    name: config.targetAgent.name,
+    endpoint: config.targetAgent.endpoint,
+    agentType: config.targetAgent.agentType,
+    connected: config.targetAgent.connected,
+  };
   const res = await fetch(`${API_BASE_URL}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ config }),
+    body: JSON.stringify({ config: { ...config, targetAgent } }),
   });
   if (!res.ok) {
     throw new Error(`Failed to create session: ${res.status} ${res.statusText}`);
