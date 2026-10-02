@@ -1,152 +1,152 @@
 import { type DashboardStatus } from "@/types/testing";
+import { type DemoModeSpeed } from "@/lib/presentationScheduler";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
-import { Radio, RotateCcw, Download, Cpu } from "lucide-react";
+import {
+  RotateCcw,
+  Play,
+  Square,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 
 interface HeaderProps {
   status: DashboardStatus;
   targetName: string;
   sessionId?: string;
-  onReset?: () => void;
-  onExportReport?: () => void;
+  currentTestNumber?: number;
+  totalTests?: number;
+  demoSpeed: DemoModeSpeed;
+  onDemoSpeedChange: (speed: DemoModeSpeed) => void;
+  onStart: () => void;
+  onPause: () => void;
+  onReset: () => void;
+  onExportReport: () => void;
+  canStart: boolean;
 }
-
-const statusConfig: Record<
-  DashboardStatus,
-  { label: string; dotClass: string; labelClass: string; borderClass: string }
-> = {
-  idle: {
-    label: "IDLE",
-    dotClass: "bg-zinc-500",
-    labelClass: "text-zinc-400",
-    borderClass: "border-zinc-800 bg-zinc-900/60",
-  },
-  testing: {
-    label: "TESTING ACTIVE",
-    dotClass: "bg-amber-400 animate-ping",
-    labelClass: "text-amber-300",
-    borderClass:
-      "border-amber-500/40 bg-amber-950/20 shadow-[0_0_12px_rgba(245,158,11,0.15)]",
-  },
-  completed: {
-    label: "COMPLETED",
-    dotClass: "bg-emerald-400",
-    labelClass: "text-emerald-300",
-    borderClass: "border-emerald-500/40 bg-emerald-950/20",
-  },
-};
 
 export function Header({
   status,
   targetName,
-  sessionId = "session_hackspire_2026_001",
+  currentTestNumber,
+  totalTests = 20,
+  demoSpeed,
+  onDemoSpeedChange,
+  onStart,
+  onPause,
   onReset,
-  onExportReport,
+  canStart,
 }: HeaderProps) {
-  const s = statusConfig[status];
+  const isRunning = status === "testing";
 
   return (
-    <header className="border-b border-border/50 bg-[#0B0F19] px-4 lg:px-6 py-2.5 flex items-center justify-between sticky top-0 z-40 backdrop-blur-md">
-      {/* Left — Brand & Positioning */}
-      <div className="flex items-center gap-3">
-        <Link
-          to="/"
-          className="flex items-center gap-3 group"
-          title="Return to AdverSight Home"
-        >
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/30 shadow-[0_0_10px_rgba(34,211,238,0.2)] overflow-hidden group-hover:scale-105 transition-transform">
-            <img
-              src="/logo.png"
-              alt="AdverSight logo"
-              className="w-12 h-12 object-contain"
-            />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold tracking-tight text-zinc-100 flex items-center gap-1.5 group-hover:text-cyan-300 transition-colors">
-                AdverSight
-                <span className="text-[9px] font-mono font-medium px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                  v1.0-RC
-                </span>
-              </h1>
+    <header className="sticky top-0 z-50 w-full bg-white/95 backdrop-blur-md border-b border-[#dfe5df]">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 h-13 flex items-center justify-between">
+        {/* Left: Brand + Target */}
+        <div className="flex items-center gap-3">
+          <Link
+            to="/"
+            className="flex items-center gap-2.5 group focus-visible:outline-none"
+          >
+            <div className="flex size-7 items-center justify-center overflow-hidden rounded bg-[#e7efeb] border border-[#d2dfd8]">
+              <img
+                src="/logo.png"
+                alt="AdverSight"
+                className="size-8 object-contain"
+              />
             </div>
-            <p className="text-[10.5px] text-zinc-400 tracking-wide font-normal flex items-center gap-1">
-              <span>Autonomous Adversarial Testing for AI Agents</span>
-            </p>
-          </div>
-        </Link>
-      </div>
+            <span className="text-sm font-bold text-[#202a2a] tracking-tight group-hover:text-[#2c674f] transition-colors">
+              AdverSight
+            </span>
+          </Link>
 
-      {/* Center — Target & Session Telemetry */}
-      <div className="hidden lg:flex items-center gap-2">
-        {/* Session ID */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-900/80 border border-border/50 text-[10.5px] font-mono text-zinc-400">
-          <Cpu size={11} className="text-zinc-500" />
-          <span className="text-zinc-500">SESSION:</span>
-          <span className="text-zinc-200">{sessionId}</span>
-        </div>
+          <div className="h-3 w-px bg-[#dfe5df] hidden sm:block" />
 
-        {/* Target Agent quick indicator */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-900/80 border border-border/50 text-[10.5px] font-mono">
-          <Radio size={11} className="text-emerald-400 animate-pulse" />
-          <span className="text-zinc-500">TARGET:</span>
-          <span className="text-zinc-200 font-sans font-medium">
+          <span className="hidden sm:inline-block font-mono text-[11px] text-[#65736d] truncate max-w-[200px]">
             {targetName}
           </span>
-          <span className="text-[9px] text-emerald-400 px-1 rounded bg-emerald-500/10 border border-emerald-500/20">
-            HTTP 200
-          </span>
         </div>
-      </div>
 
-      {/* Right — Actions & Testing Status */}
-      <div className="flex items-center gap-3">
-        {/* Quick Actions */}
-        <div className="hidden sm:flex items-center gap-1.5">
+        {/* Center: Status indicator */}
+        <div className="flex items-center gap-2">
+          {isRunning ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fff4e5] border border-[#fbd8b3] px-2.5 py-0.5 text-xs font-mono text-[#94601b]">
+              <span className="size-1.5 rounded-full bg-[#c7872d] animate-pulse" />
+              <span>Probe {currentTestNumber ? String(currentTestNumber).padStart(2, "0") : "01"}/{totalTests}</span>
+            </span>
+          ) : status === "completed" ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e8f4ec] border border-[#c4decb] px-2.5 py-0.5 text-xs font-mono text-[#2c674f]">
+              <span className="size-1.5 rounded-full bg-[#3e8658]" />
+              <span>Completed</span>
+            </span>
+          ) : (
+            <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-[#f3f5f3] border border-[#e1e6e2] px-2.5 py-0.5 text-xs font-mono text-[#65736d]">
+              <span className="size-1.5 rounded-full bg-[#99a69f]" />
+              <span>Idle</span>
+            </span>
+          )}
+
+          {/* Speed Toggle */}
+          <div className="flex items-center rounded-md border border-[#dfe5df] bg-[#f8faf8] p-0.5 text-[11px] font-mono">
+            <button
+              type="button"
+              onClick={() => onDemoSpeedChange("live")}
+              className={cn(
+                "px-2 py-0.5 rounded transition-all flex items-center gap-1",
+                demoSpeed === "live"
+                  ? "bg-white text-[#202a2a] font-semibold shadow-2xs border border-[#d2dbd4]"
+                  : "text-[#65736d] hover:text-[#202a2a]"
+              )}
+              title="Instant streaming"
+            >
+              <Zap size={10} />
+              <span>Live</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onDemoSpeedChange("1x")}
+              className={cn(
+                "px-2 py-0.5 rounded transition-all flex items-center gap-1",
+                demoSpeed === "1x"
+                  ? "bg-[#2c674f] text-white font-semibold shadow-2xs"
+                  : "text-[#65736d] hover:text-[#202a2a]"
+              )}
+              title="Deliberate presentation pacing"
+            >
+              <Sparkles size={10} />
+              <span>Demo</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Right: Primary Controls */}
+        <div className="flex items-center gap-1.5">
           <button
             onClick={onReset}
-            className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-mono text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-border/40 transition-colors"
-            title="Reset testing state"
+            className="inline-flex size-7 items-center justify-center rounded border border-[#dfe5df] bg-white text-[#65736d] hover:text-[#202a2a] hover:bg-[#f3f5f2] transition-colors"
+            title="Reset"
           >
-            <RotateCcw size={11} />
-            <span>Reset</span>
+            <RotateCcw size={12} />
           </button>
-          <button
-            onClick={onExportReport}
-            className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-mono text-zinc-400 hover:text-cyan-300 hover:bg-cyan-950/20 border border-border/40 transition-colors"
-            title="Export audit evidence JSON"
-          >
-            <Download size={11} />
-            <span className="hidden md:inline">Export Audit</span>
-          </button>
-        </div>
 
-        {/* Status Pill */}
-        <div
-          className={cn(
-            "flex items-center gap-2 px-3 py-1.5 rounded-md border text-[11px] font-mono font-semibold tracking-wider transition-all duration-300",
-            s.borderClass,
+          {isRunning ? (
+            <button
+              onClick={onPause}
+              className="inline-flex items-center gap-1 rounded bg-[#fff2ef] hover:bg-[#ffe5df] border border-[#f5c6bc] text-[#9a5141] text-xs font-mono font-semibold px-3 py-1.5 transition-all"
+            >
+              <Square size={10} fill="currentColor" />
+              <span>Stop</span>
+            </button>
+          ) : (
+            <button
+              onClick={onStart}
+              disabled={!canStart}
+              className="inline-flex items-center gap-1 rounded bg-[#202a2a] hover:bg-[#2c674f] text-white text-xs font-mono font-semibold px-3 py-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Play size={10} fill="currentColor" />
+              <span>{status === "completed" ? "Rerun" : "Start Test"}</span>
+            </button>
           )}
-        >
-          <span className="relative flex h-2 w-2">
-            <span
-              className={cn(
-                "absolute inline-flex h-full w-full rounded-full opacity-75",
-                s.dotClass,
-              )}
-            />
-            <span
-              className={cn(
-                "relative inline-flex rounded-full h-2 w-2",
-                status === "testing"
-                  ? "bg-amber-400"
-                  : status === "completed"
-                    ? "bg-emerald-400"
-                    : "bg-zinc-500",
-              )}
-            />
-          </span>
-          <span className={s.labelClass}>{s.label}</span>
         </div>
       </div>
     </header>

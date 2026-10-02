@@ -6,11 +6,11 @@ interface DashboardLayoutProps {
 
 /**
  * Technical workspace layout for AdverSight.
- * Desktop/laptop first, responsive down to tablet.
+ * Light editorial product design, desktop/laptop first, responsive down to tablet.
  */
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
-    <div className="min-h-screen bg-[#080B12] text-zinc-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-[#f8faf8] text-[#202a2a] flex flex-col font-sans">
       {children}
     </div>
   );

@@ -130,29 +130,29 @@
   }
 }
 
-/* ── AdverSight custom properties (non-Tailwind, referenced via inline style / CSS vars) ── */
+/* ── AdverSight custom properties (Light Editorial Brand) ── */
 :root {
-    --adv-pass:       oklch(0.55 0.17 145);
-    --adv-pass-bg:    oklch(0.55 0.17 145 / 12%);
-    --adv-pass-border: oklch(0.55 0.17 145 / 28%);
-    --adv-fail:       oklch(0.65 0.22 25);
-    --adv-fail-bg:    oklch(0.65 0.22 25 / 12%);
-    --adv-fail-border: oklch(0.65 0.22 25 / 28%);
-    --adv-running:    oklch(0.75 0.14 60);
-    --adv-running-bg: oklch(0.75 0.14 60 / 12%);
-    --adv-pending:    oklch(0.45 0.01 240);
-    --adv-pending-bg: oklch(0.45 0.01 240 / 12%);
-    --adv-cyan:       oklch(0.72 0.16 200);
-    --adv-cyan-bg:    oklch(0.72 0.16 200 / 10%);
-    --adv-panel:      oklch(0.13 0.008 240);
-    --adv-surface:    oklch(0.17 0.008 240);
-    --adv-border:     oklch(1 0 0 / 8%);
+    --adv-pass:       #2c674f;
+    --adv-pass-bg:    #eef6f1;
+    --adv-pass-border: #cfe0d5;
+    --adv-fail:       #9a5141;
+    --adv-fail-bg:    #fdf3f0;
+    --adv-fail-border: #eed5ce;
+    --adv-running:    #94601b;
+    --adv-running-bg: #fff8eb;
+    --adv-pending:    #6e7b74;
+    --adv-pending-bg: #f0f3f1;
+    --adv-cyan:       #275a45;
+    --adv-cyan-bg:    #eaf3ee;
+    --adv-panel:      #ffffff;
+    --adv-surface:    #f8faf8;
+    --adv-border:     #dfe5df;
 }
 
-/* Pulsing animation for live indicators (CSS only, ambient) */
+/* Pulsing animation for live indicators */
 @keyframes adv-pulse {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.3; }
+  50%       { opacity: 0.35; }
 }
 
 @keyframes adv-blink {
@@ -160,11 +160,6 @@
   49%       { opacity: 1; }
   50%       { opacity: 0; }
   99%       { opacity: 0; }
-}
-
-@keyframes adv-scan {
-  0%   { transform: translateY(-100%); }
-  100% { transform: translateY(100vh); }
 }
 
 .adv-pulse   { animation: adv-pulse 1.8s ease-in-out infinite; }
@@ -177,18 +172,18 @@
   letter-spacing: -0.01em;
 }
 
-/* Custom sleek scrollbar for technical dashboards */
+/* Sleek subtle scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(8, 11, 18, 0.8);
+  background: #f1f4f1;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 2px;
+  background: #cbd6ce;
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(34, 211, 238, 0.3);
+  background: #9baaa0;
 }
