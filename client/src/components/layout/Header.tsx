@@ -1,6 +1,6 @@
 import { type DashboardStatus } from "@/types/testing";
 import { cn } from "@/lib/utils";
-import { ShieldAlert, Radio, RotateCcw, Download, Cpu } from "lucide-react";
+import { Radio, RotateCcw, Download, Cpu } from "lucide-react";
 
 interface HeaderProps {
   status: DashboardStatus;
@@ -24,7 +24,8 @@ const statusConfig: Record<
     label: "TESTING ACTIVE",
     dotClass: "bg-amber-400 animate-ping",
     labelClass: "text-amber-300",
-    borderClass: "border-amber-500/40 bg-amber-950/20 shadow-[0_0_12px_rgba(245,158,11,0.15)]",
+    borderClass:
+      "border-amber-500/40 bg-amber-950/20 shadow-[0_0_12px_rgba(245,158,11,0.15)]",
   },
   completed: {
     label: "COMPLETED",
@@ -47,8 +48,12 @@ export function Header({
     <header className="border-b border-border/50 bg-[#0B0F19] px-4 lg:px-6 py-2.5 flex items-center justify-between sticky top-0 z-40 backdrop-blur-md">
       {/* Left — Brand & Positioning */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.2)]">
-          <ShieldAlert size={18} strokeWidth={2} />
+        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/30 shadow-[0_0_10px_rgba(34,211,238,0.2)] overflow-hidden">
+          <img
+            src="/logo.png"
+            alt="AdverSight logo"
+            className="w-12 h-12 object-contain"
+          />
         </div>
         <div>
           <div className="flex items-center gap-2">
@@ -78,7 +83,9 @@ export function Header({
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-900/80 border border-border/50 text-[10.5px] font-mono">
           <Radio size={11} className="text-emerald-400 animate-pulse" />
           <span className="text-zinc-500">TARGET:</span>
-          <span className="text-zinc-200 font-sans font-medium">{targetName}</span>
+          <span className="text-zinc-200 font-sans font-medium">
+            {targetName}
+          </span>
           <span className="text-[9px] text-emerald-400 px-1 rounded bg-emerald-500/10 border border-emerald-500/20">
             HTTP 200
           </span>
@@ -111,20 +118,24 @@ export function Header({
         <div
           className={cn(
             "flex items-center gap-2 px-3 py-1.5 rounded-md border text-[11px] font-mono font-semibold tracking-wider transition-all duration-300",
-            s.borderClass
+            s.borderClass,
           )}
         >
           <span className="relative flex h-2 w-2">
             <span
               className={cn(
                 "absolute inline-flex h-full w-full rounded-full opacity-75",
-                s.dotClass
+                s.dotClass,
               )}
             />
             <span
               className={cn(
                 "relative inline-flex rounded-full h-2 w-2",
-                status === "testing" ? "bg-amber-400" : status === "completed" ? "bg-emerald-400" : "bg-zinc-500"
+                status === "testing"
+                  ? "bg-amber-400"
+                  : status === "completed"
+                    ? "bg-emerald-400"
+                    : "bg-zinc-500",
               )}
             />
           </span>

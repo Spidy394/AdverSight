@@ -29,12 +29,17 @@ class TestRunner:
         store: TraceCollector | None = None,
         on_event: Callable[[LogEvent], None] | None = None,
         on_test: Callable[[TestResult], None] | None = None,
+        on_turn: Callable[[str, Turn], None] | None = None,
+        on_failure: Callable[[Any], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ):
         self.agent, self.spec = agent, spec
         self.generator = generator or AttackGenerator()
         self.evaluator = evaluator or Evaluator()
         self.store = store or TraceCollector()
         self.on_event, self.on_test = on_event, on_test
+        self.on_turn, self.on_failure = on_turn, on_failure
+        self.cancel_check = cancel_check
         self.logs: list[LogEvent] = []
 
     def _log(self, type_: str, message: str) -> None:
@@ -52,6 +57,9 @@ class TestRunner:
         max_variants = max(1, len(scenarios) // 4)
         variants = 0
         while pending:
+            if self.cancel_check and self.cancel_check():
+                self._log("SESSION_STOPPED", "Execution stopped by operator")
+                break
             sc = pending.popleft()
             res = self.run_test(sc)
             results.append(res)
@@ -92,6 +100,8 @@ class TestRunner:
         turns: list[Turn] = []
         message: str | None = sc.attack
         while message is not None:
+            if self.cancel_check and self.cancel_check():
+                break
             self._log("ATTACK_GENERATED", message[:120])
             self._log("REQUEST_SENT", f"{sc.id} turn {len(turns) + 1}")
             try:
@@ -101,7 +111,10 @@ class TestRunner:
                 result.status, result.response = "pending", f"agent error: {exc}"
                 result.turns = turns
                 return result
-            turns.append(Turn(attack=message, response=resp))
+            turn = Turn(attack=message, response=resp)
+            turns.append(turn)
+            if self.on_turn:
+                self.on_turn(sc.id, turn)
             self._log("AGENT_RESPONSE_RECEIVED", resp.text[:120])
             for tc in resp.tool_calls:
                 self._log(f"TOOL_CALL: {tc.name}", str(tc.arguments))
@@ -110,7 +123,7 @@ class TestRunner:
         self._log("RESPONSE_ANALYZED", f"{sc.id} {len(turns)} turn(s)")
         verdict = self.evaluator.evaluate(self.spec, turns)
         result.turns = turns
-        result.response = turns[-1].response.text
+        result.response = turns[-1].response.text if turns else ""
         result.needs_review = verdict.needs_review
         if verdict.passed:
             result.status = "passed"
@@ -118,12 +131,15 @@ class TestRunner:
             self._log("POLICY_CHECK: PASSED", sc.id + note)
         else:
             result.status = "failed"
-            result.failure_type = verdict.primary.type.value  # type: ignore[union-attr]
+            result.failure_type = verdict.primary.type.value if verdict.primary else "policy_violation"
             self._log("POLICY_CHECK: FAILED", f"{sc.id} {result.failure_type}")
+            failure = build_failure(result, self.spec, verdict)
             self.store.add(
-                build_failure(result, self.spec, verdict),
+                failure,
                 build_replay_case(result, self.spec, verdict),
             )
+            if self.on_failure:
+                self.on_failure(failure)
             self._log("FAILURE_RECORDED", f"{sc.id} {result.failure_type}")
         if self.on_test:
             self.on_test(result)

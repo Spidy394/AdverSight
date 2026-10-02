@@ -15,11 +15,12 @@ from app.model.test import (
     ToolCall,
     Turn,
 )
+from app.model.event import TestEvent, TestEventType
 from app.model.trace import LogEvent, ReplayCase, ReplayResult, SessionReport
 
 __all__ = [
     "FAILURE_LABELS", "SEVERITY_RANK", "AgentResponse", "AttackCategory", "AttackScenario",
     "Failure", "FailureType", "Finding", "LogEvent", "Model", "ReplayCase", "ReplayResult",
-    "SessionReport", "SessionSummary", "Severity", "TargetPolicy", "TargetSpec", "TestResult",
-    "TestStatus", "ToolCall", "Turn", "Verdict",
+    "SessionReport", "SessionSummary", "Severity", "TargetPolicy", "TargetSpec", "TestEvent",
+    "TestEventType", "TestResult", "TestStatus", "ToolCall", "Turn", "Verdict",
 ]
