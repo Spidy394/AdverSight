@@ -43,6 +43,7 @@ from app.services.event_broker import event_broker
 from app.services.replay_service import replay
 from app.services.testing_engine import TestRunner
 from app.storage.repository import storage
+from app.util.sanitizer import sanitize_dict, sanitize_text
 from app.util.trace_commons import TargetAgent
 
 
@@ -75,6 +76,11 @@ class FailureNotFoundError(SessionError):
 
 
 class MissingReplayEvidenceError(SessionError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class TargetAdapterError(SessionError):
     def __init__(self, message: str) -> None:
         super().__init__(message)
 
@@ -137,9 +143,11 @@ def _derive_progress(record: SessionRecord) -> TestProgress:
     passed = sum(1 for t in record.tests if t.status is TestStatus.PASSED)
     failed = sum(1 for t in record.tests if t.status is TestStatus.FAILED)
     running = sum(1 for t in record.tests if t.status is TestStatus.RUNNING)
+    total = len(record.tests) or record.config.max_tests
+    completed = passed + failed
     return TestProgress(
-        total=len(record.tests) or record.config.max_tests,
-        completed=passed + failed,
+        total=total,
+        completed=completed,
         passed=passed,
         failed=failed,
         running=running,
@@ -168,6 +176,8 @@ def _map_log_to_test_event_type(raw_type: str) -> TestEventType | None:
         return TestEventType.TEST_STARTED
     if raw_type in ("ATTACK_GENERATED", "ATTACK_ADAPTED"):
         return TestEventType.ATTACK_GENERATED
+    if raw_type == "WEAKNESS_IDENTIFIED":
+        return TestEventType.WEAKNESS_IDENTIFIED
     if raw_type == "REQUEST_SENT":
         return TestEventType.REQUEST_SENT
     if raw_type == "AGENT_RESPONSE_RECEIVED":
@@ -197,7 +207,12 @@ def _select_agent(config: TestSessionConfig) -> TargetAgent:
     return FlightBookingAgent(vulnerable=True, leaky=True)
 
 
-def _map_result_to_test_case(result: TestResult, test_number: int) -> TestCase:
+def _map_result_to_test_case(
+    result: TestResult,
+    test_number: int,
+    session_id: str | None = None,
+    failure_id: str | None = None,
+) -> TestCase:
     cat_val = (
         AttackCategory(result.strategy)
         if result.strategy in [c.value for c in AttackCategory]
@@ -217,43 +232,234 @@ def _map_result_to_test_case(result: TestResult, test_number: int) -> TestCase:
 
     return TestCase(
         id=result.id,
+        session_id=session_id,
         test_number=test_number,
         strategy=cat_val,
         attack=result.attack,
         status=status_val,
         conversation=conv,
+        turns=conv,
         response=result.response,
         tool_calls=tool_calls if tool_calls else None,
+        failure_id=failure_id,
         failure_type=result.failure_type,
         started_at=ts,
         completed_at=ts if result.status in ("passed", "failed") else None,
     )
 
 
-def _map_failure_to_session_failure(fail_obj: Any, test_number: int) -> Failure:
+def _map_failure_to_session_failure(
+    fail_obj: Any,
+    test_number: int,
+    session_id: str | None = None,
+    target_agent_id: str | None = None,
+    target_agent_name: str | None = None,
+    target_agent_endpoint: str | None = None,
+    conversation: list[ConversationTurn] | None = None,
+) -> Failure:
     cat_val = (
         AttackCategory(fail_obj.strategy)
         if fail_obj.strategy in [c.value for c in AttackCategory]
         else AttackCategory.POLICY_VIOLATION
     )
     sev_val = Severity(fail_obj.severity)
+
     tool_calls = [
-        ToolCall(name=tc.name, arguments=tc.arguments, timestamp=fail_obj.timestamp)
-        for tc in getattr(fail_obj, "tool_calls", [])
+        ToolCall(
+            name=tc.name,
+            arguments=sanitize_dict(getattr(tc, "arguments", {}) or {}),
+            timestamp=getattr(tc, "timestamp", None) or fail_obj.timestamp,
+            turn_index=getattr(tc, "turn_index", None),
+            result=sanitize_dict(getattr(tc, "result", None))
+            if isinstance(getattr(tc, "result", None), dict)
+            else getattr(tc, "result", None),
+            authorized=getattr(tc, "authorized", None),
+        )
+        for tc in getattr(fail_obj, "tool_calls", []) or []
     ]
+
+    engine_turns = getattr(fail_obj, "turns", None)
+    if not conversation and engine_turns and len(engine_turns) > 0 and hasattr(engine_turns[0], "attack"):
+        conversation = []
+        for t_idx, t in enumerate(engine_turns):
+            turn_no = t_idx + 1
+            conversation.append(
+                ConversationTurn(
+                    role=TurnRole.ADVERSIGHT,
+                    content=sanitize_text(t.attack),
+                    timestamp=fail_obj.timestamp,
+                    turn_number=turn_no,
+                )
+            )
+            t_tool_calls = [
+                ToolCall(
+                    name=tc.name,
+                    arguments=sanitize_dict(getattr(tc, "arguments", {}) or {}),
+                    timestamp=fail_obj.timestamp,
+                    turn_index=t_idx,
+                )
+                for tc in (getattr(t.response, "tool_calls", []) or [])
+            ]
+            conversation.append(
+                ConversationTurn(
+                    role=TurnRole.TARGET,
+                    content=sanitize_text(t.response.text if hasattr(t.response, "text") else str(t.response)),
+                    timestamp=fail_obj.timestamp,
+                    turn_number=turn_no,
+                    tool_calls=t_tool_calls if t_tool_calls else None,
+                    latency_ms=getattr(t.response, "latency_ms", None),
+                )
+            )
+
+    chronological_trace: list[dict[str, Any]] = []
+    if engine_turns and len(engine_turns) > 0 and hasattr(engine_turns[0], "attack"):
+        for t_idx, t in enumerate(engine_turns):
+            resp_text = t.response.text if hasattr(t.response, "text") else str(t.response)
+            t_calls = getattr(t.response, "tool_calls", []) or []
+            chronological_trace.append({
+                "turnNumber": t_idx + 1,
+                "attack": sanitize_text(t.attack),
+                "response": sanitize_text(resp_text),
+                "toolCalls": [
+                    {
+                        "name": tc.name,
+                        "arguments": sanitize_dict(getattr(tc, "arguments", {}) or {}),
+                        "turnIndex": t_idx,
+                    }
+                    for tc in t_calls
+                ],
+                "latencyMs": getattr(t.response, "latency_ms", None),
+            })
+    elif conversation:
+        for i in range(0, len(conversation), 2):
+            adv_turn = conversation[i]
+            tgt_turn = conversation[i + 1] if i + 1 < len(conversation) else None
+            chronological_trace.append({
+                "turnNumber": (i // 2) + 1,
+                "attack": sanitize_text(adv_turn.content),
+                "response": sanitize_text(tgt_turn.content) if tgt_turn else "",
+                "toolCalls": [
+                    {
+                        "name": tc.name,
+                        "arguments": sanitize_dict(tc.arguments or {}),
+                        "turnIndex": tc.turn_index if tc.turn_index is not None else (i // 2),
+                    }
+                    for tc in (tgt_turn.tool_calls or [])
+                ] if tgt_turn else [],
+                "latencyMs": tgt_turn.latency_ms if tgt_turn else None,
+            })
+    else:
+        chronological_trace.append({
+            "turnNumber": getattr(fail_obj, "turn_number", 1) or 1,
+            "attack": sanitize_text(fail_obj.attack),
+            "response": sanitize_text(fail_obj.response),
+            "toolCalls": [tc.model_dump(by_alias=True) for tc in tool_calls] if tool_calls else [],
+            "latencyMs": getattr(fail_obj, "latency_ms", None),
+        })
+
+    all_findings = getattr(fail_obj, "all_findings", None)
+    detector_results: list[dict[str, Any]] = []
+    if all_findings:
+        for idx, f in enumerate(all_findings):
+            f_type = getattr(f.type, "value", str(f.type)) if hasattr(f, "type") else None
+            f_sev = getattr(f.severity, "value", str(f.severity)) if hasattr(f, "severity") else None
+            detector_results.append({
+                "detector": getattr(f, "detector", None),
+                "condition": f_type,
+                "severity": f_sev,
+                "confidence": getattr(f, "confidence", 1.0),
+                "reason": getattr(f, "description", None),
+                "violatedRule": getattr(f, "violated_rule", None),
+                "isPrimary": (idx == 0),
+                "turnIndex": getattr(f, "turn_index", None),
+            })
+    else:
+        detector_results.append({
+            "detector": getattr(fail_obj, "detector", None),
+            "condition": fail_obj.type,
+            "severity": sev_val.value,
+            "confidence": getattr(fail_obj, "confidence", 1.0) or 1.0,
+            "reason": getattr(fail_obj, "why_failed", fail_obj.description),
+            "violatedRule": getattr(fail_obj, "violated_rule", None),
+            "isPrimary": True,
+            "turnIndex": getattr(fail_obj, "turn_number", 1) - 1 if getattr(fail_obj, "turn_number", None) else None,
+        })
+
+    fail_id = (
+        f"fail_{session_id}_{fail_obj.test_id}"
+        if session_id and not fail_obj.id.startswith(f"fail_{session_id}")
+        else fail_obj.id
+    )
+
+    why_failed = getattr(fail_obj, "why_failed", fail_obj.description)
+    violated_rule = getattr(fail_obj, "violated_rule", None)
+    detector = getattr(fail_obj, "detector", None)
+    confidence = getattr(fail_obj, "confidence", None)
+    turn_number = getattr(fail_obj, "turn_number", None)
+    latency_ms = getattr(fail_obj, "latency_ms", None)
+    replayable = getattr(fail_obj, "replayable", True)
+    confidence_source = getattr(fail_obj, "confidence_source", None)
+    confidence_evidence = getattr(fail_obj, "confidence_evidence", None) or []
+    reproducibility = getattr(fail_obj, "reproducibility", "untested")
+    reproduction_rate = getattr(fail_obj, "reproduction_rate", None)
+
+    evidence = {
+        "conversation": [t.model_dump(by_alias=True) for t in conversation] if conversation else [],
+        "attack": sanitize_text(fail_obj.attack),
+        "response": sanitize_text(fail_obj.response),
+        "agentResponse": sanitize_text(fail_obj.response),
+        "agentResponses": [sanitize_text(fail_obj.response)],
+        "toolCalls": [tc.model_dump(by_alias=True) for tc in tool_calls] if tool_calls else [],
+        "violatedPolicy": violated_rule,
+        "violatedRule": violated_rule,
+        "detector": detector,
+        "confidence": confidence,
+        "confidenceSource": confidence_source,
+        "confidenceEvidence": confidence_evidence,
+        "reproducibility": reproducibility,
+        "reproductionRate": reproduction_rate,
+        "reason": why_failed,
+        "whyItFailed": why_failed,
+        "detectorResults": detector_results,
+        "chronologicalTrace": chronological_trace,
+        "turnNumber": turn_number,
+        "latencyMs": latency_ms,
+        "replayable": replayable,
+    }
+
     return Failure(
-        id=fail_obj.id,
+        id=fail_id,
         test_id=fail_obj.test_id,
         test_number=test_number,
         type=fail_obj.type,
         strategy=cat_val,
         description=fail_obj.description,
         severity=sev_val,
-        attack=fail_obj.attack,
-        response=fail_obj.response,
+        attack=sanitize_text(fail_obj.attack),
+        response=sanitize_text(fail_obj.response),
         tool_calls=tool_calls if tool_calls else None,
-        why_it_failed=getattr(fail_obj, "why_failed", fail_obj.description),
+        why_it_failed=why_failed,
         timestamp=fail_obj.timestamp,
+        session_id=session_id,
+        target_agent_id=target_agent_id,
+        target_agent_name=target_agent_name,
+        target_agent_endpoint=target_agent_endpoint,
+        replay_case_id=getattr(fail_obj, "replay_case_id", f"replay_{fail_obj.test_id}"),
+        conversation=conversation,
+        violated_rule=violated_rule,
+        violated_policy=violated_rule,
+        detector=detector,
+        confidence=confidence,
+        reason=why_failed,
+        evidence=evidence,
+        turn_number=turn_number,
+        latency_ms=latency_ms,
+        detector_results=detector_results,
+        replayable=replayable,
+        confidence_source=confidence_source,
+        confidence_evidence=confidence_evidence,
+        reproducibility=reproducibility,
+        reproduction_rate=reproduction_rate,
     )
 
 
@@ -266,11 +472,17 @@ async def _run_session_worker(
     try:
         record = await get_session(session_id)
     except SessionNotFoundError:
+        async with _lock:
+            _active_tasks.pop(session_id, None)
+            _cancel_flags.pop(session_id, None)
         return
 
     # Yield control to event loop so start HTTP response completes cleanly
     await asyncio.sleep(0.05)
     if cancel_event.is_set():
+        async with _lock:
+            _active_tasks.pop(session_id, None)
+            _cancel_flags.pop(session_id, None)
         return
 
     agent, spec = spec_for_agent(
@@ -316,7 +528,14 @@ async def _run_session_worker(
 
     def on_engine_test(result: TestResult) -> None:
         test_num = int(result.id.split("_")[-1]) if "_" in result.id else len(record.tests) + 1
-        test_case = _map_result_to_test_case(result, test_num)
+        existing_test = next((t for t in record.tests if t.id == result.id), None)
+        failure_id = existing_test.failure_id if existing_test else None
+        test_case = _map_result_to_test_case(
+            result,
+            test_num,
+            session_id=record.session_id,
+            failure_id=failure_id,
+        )
 
         existing_idx = next((i for i, t in enumerate(record.tests) if t.id == result.id), None)
         if existing_idx is not None:
@@ -376,18 +595,44 @@ async def _run_session_worker(
     def on_engine_turn(test_id: str, turn: Turn) -> None:
         now_ts = _hhmmss()
         test = next((t for t in record.tests if t.id == test_id), None)
+        turn_num = (len(test.conversation) // 2) + 1 if test else 1
+
+        turn_tool_calls: list[ToolCall] = []
+        if turn.response.tool_calls:
+            turn_tool_calls = [
+                ToolCall(
+                    name=tc.name,
+                    arguments=sanitize_dict(tc.arguments or {}),
+                    timestamp=now_ts,
+                    turn_index=turn_num - 1,
+                )
+                for tc in turn.response.tool_calls
+            ]
+
         if test:
             test.conversation.append(
-                ConversationTurn(role=TurnRole.ADVERSIGHT, content=turn.attack, timestamp=now_ts)
+                ConversationTurn(
+                    role=TurnRole.ADVERSIGHT,
+                    content=sanitize_text(turn.attack),
+                    timestamp=now_ts,
+                    turn_number=turn_num,
+                )
             )
             test.conversation.append(
-                ConversationTurn(role=TurnRole.TARGET, content=turn.response.text, timestamp=now_ts)
+                ConversationTurn(
+                    role=TurnRole.TARGET,
+                    content=sanitize_text(turn.response.text),
+                    timestamp=now_ts,
+                    turn_number=turn_num,
+                    tool_calls=turn_tool_calls if turn_tool_calls else None,
+                    latency_ms=turn.response.latency_ms,
+                )
             )
-            if turn.response.tool_calls:
-                test.tool_calls = [
-                    ToolCall(name=tc.name, arguments=tc.arguments, timestamp=now_ts)
-                    for tc in turn.response.tool_calls
-                ]
+            test.turns = list(test.conversation)
+            if turn_tool_calls:
+                if test.tool_calls is None:
+                    test.tool_calls = []
+                test.tool_calls.extend(turn_tool_calls)
 
         event_broker.publish_threadsafe(
             loop,
@@ -398,18 +643,57 @@ async def _run_session_worker(
                 test_id=test_id,
                 message=turn.response.text[:120],
                 data={
-                    "attack": turn.attack,
-                    "response": turn.response.text,
-                    "toolCalls": [tc.model_dump(by_alias=True) for tc in turn.response.tool_calls],
+                    "attack": sanitize_text(turn.attack),
+                    "response": sanitize_text(turn.response.text),
+                    "toolCalls": [tc.model_dump(by_alias=True) for tc in turn_tool_calls],
                     "timestamp": now_ts,
+                    "turnNumber": turn_num,
+                    "latencyMs": turn.response.latency_ms,
                 },
             ),
         )
 
     def on_engine_failure(fail_obj: Any) -> None:
         test_num = int(fail_obj.test_id.split("_")[-1]) if "_" in fail_obj.test_id else len(record.failures) + 1
-        failure_model = _map_failure_to_session_failure(fail_obj, test_num)
+        test = next((t for t in record.tests if t.id == fail_obj.test_id), None)
+        conv = list(test.conversation) if test and test.conversation else None
+        failure_model = _map_failure_to_session_failure(
+            fail_obj,
+            test_number=test_num,
+            session_id=record.session_id,
+            target_agent_id=record.config.target_agent.id,
+            target_agent_name=record.config.target_agent.name,
+            target_agent_endpoint=record.config.target_agent.endpoint,
+            conversation=conv,
+        )
+        if test:
+            test.failure_id = failure_model.id
         record.failures.append(failure_model)
+        if not loop.is_closed():
+            asyncio.run_coroutine_threadsafe(storage.failures.save(failure_model), loop)
+
+        event_broker.publish_threadsafe(
+            loop,
+            session_id,
+            TestEvent(
+                session_id=session_id,
+                type=TestEventType.FAILURE_DETECTED,
+                test_id=fail_obj.test_id,
+                message=f"Failure detected: {fail_obj.type} ({fail_obj.severity})",
+                data={
+                    "failureId": failure_model.id,
+                    "testId": failure_model.test_id,
+                    "sessionId": failure_model.session_id,
+                    "failureType": failure_model.type,
+                    "severity": failure_model.severity.value if hasattr(failure_model.severity, "value") else str(failure_model.severity),
+                    "detector": failure_model.detector,
+                    "reason": failure_model.reason,
+                    "violatedPolicy": failure_model.violated_policy,
+                    "confidence": failure_model.confidence,
+                    "evidence": failure_model.evidence,
+                },
+            ),
+        )
 
         event_broker.publish_threadsafe(
             loop,
@@ -419,7 +703,19 @@ async def _run_session_worker(
                 type=TestEventType.FAILURE_RECORDED,
                 test_id=fail_obj.test_id,
                 message=f"Failure recorded: {fail_obj.type} ({fail_obj.severity})",
-                data={"failure": failure_model.model_dump(by_alias=True)},
+                data={
+                    "failureId": failure_model.id,
+                    "testId": failure_model.test_id,
+                    "sessionId": failure_model.session_id,
+                    "failureType": failure_model.type,
+                    "severity": failure_model.severity.value if hasattr(failure_model.severity, "value") else str(failure_model.severity),
+                    "detector": failure_model.detector,
+                    "reason": failure_model.reason,
+                    "violatedPolicy": failure_model.violated_policy,
+                    "confidence": failure_model.confidence,
+                    "evidence": failure_model.evidence or failure_model.model_dump(by_alias=True),
+                    "failure": failure_model.model_dump(by_alias=True),
+                },
             ),
         )
 
@@ -456,10 +752,17 @@ async def _run_session_worker(
                     },
                 ),
             )
+    except asyncio.CancelledError:
+        if cancel_event.is_set() or record.status is SessionStatus.COMPLETED:
+            pass
+        else:
+            record.status = SessionStatus.COMPLETED
+            record.stopped_at = datetime.now(timezone.utc)
     except Exception as exc:
         record.status = SessionStatus.COMPLETED
         record.stopped_at = datetime.now(timezone.utc)
-        err_msg = f"Session execution error: {exc}"
+        sanitized_err = sanitize_text(str(exc))
+        err_msg = f"Session execution error: {sanitized_err}"
         _append_log(record, LogEventType.SESSION_COMPLETED, err_msg)
         await event_broker.publish(
             session_id,
@@ -467,7 +770,7 @@ async def _run_session_worker(
                 session_id=session_id,
                 type=TestEventType.SESSION_ERROR,
                 message=err_msg,
-                data={"error": str(exc)},
+                data={"error": sanitized_err},
             ),
         )
     finally:
@@ -559,8 +862,10 @@ async def stop_session(session_id: str) -> SessionRecord:
         record.status = SessionStatus.COMPLETED
         record.stopped_at = datetime.now(timezone.utc)
 
-        if cancel_event := _cancel_flags.get(session_id):
+        if cancel_event := _cancel_flags.pop(session_id, None):
             cancel_event.set()
+        if task := _active_tasks.pop(session_id, None):
+            task.cancel()
 
         _append_log(
             record,
@@ -596,11 +901,22 @@ async def wait_for_session(session_id: str, timeout: float = 30.0) -> SessionRec
 
 def build_dashboard(record: SessionRecord) -> SessionDashboard:
     """Project the internal record onto the frontend's ``DashboardData``."""
+    progress = _derive_progress(record)
     return SessionDashboard(
         session_id=record.session_id,
+        id=record.session_id,
         status=record.status,
+        target_agent=record.config.target_agent,
         config=record.config,
-        progress=_derive_progress(record),
+        configuration=record.config,
+        progress=progress,
+        total_tests=progress.total,
+        completed_tests=progress.completed,
+        passed_tests=progress.passed,
+        failed_tests=progress.failed,
+        created_at=record.created_at.isoformat() if record.created_at else None,
+        started_at=record.started_at.isoformat() if record.started_at else None,
+        completed_at=record.stopped_at.isoformat() if record.stopped_at else None,
         tests=list(record.tests),
         failures=list(record.failures),
         logs=list(record.logs),
@@ -614,6 +930,16 @@ async def get_session_tests(session_id: str) -> list[TestCase]:
     return list(record.tests)
 
 
+async def get_test_case(test_id: str) -> TestCase | None:
+    """Retrieve a single test case by its test ID."""
+    async with _lock:
+        for rec in reversed(list(_sessions.values())):
+            for t in rec.tests:
+                if t.id == test_id:
+                    return t
+    return None
+
+
 async def get_session_failures(session_id: str) -> list[Failure]:
     """Retrieve all failure evidence records for a given session."""
     record = await get_session(session_id)
@@ -621,14 +947,19 @@ async def get_session_failures(session_id: str) -> list[Failure]:
 
 
 async def get_failure(failure_id: str) -> Failure | None:
-    """Retrieve a single failure evidence record by its failure ID."""
+    """Retrieve a single failure evidence record by its failure ID or test ID."""
     fail = await storage.failures.get(failure_id)
     if fail:
         return fail
     async with _lock:
-        for rec in _sessions.values():
+        for rec in reversed(list(_sessions.values())):
             for f in rec.failures:
-                if f.id == failure_id:
+                if (
+                    f.id == failure_id
+                    or f.test_id == failure_id
+                    or f.id.endswith(f"_{failure_id}")
+                    or failure_id.endswith(f"_{f.test_id}")
+                ):
                     return f
     return None
 
@@ -639,13 +970,13 @@ async def get_session_events(session_id: str) -> list[LogEvent]:
     return list(record.logs)
 
 
-async def replay_test_case(test_id: str) -> dict[str, Any]:
+async def replay_test_case(test_id: str, attempts: int = 1) -> dict[str, Any]:
     """Replay a specific test case deterministically and return reproduction metrics."""
     target_test: TestCase | None = None
     target_record: SessionRecord | None = None
 
     async with _lock:
-        for rec in _sessions.values():
+        for rec in reversed(list(_sessions.values())):
             for t in rec.tests:
                 if t.id == test_id:
                     target_test = t
@@ -677,8 +1008,9 @@ async def replay_test_case(test_id: str) -> dict[str, Any]:
         created_at=datetime.now(timezone.utc).isoformat(),
     )
 
+    n_attempts = max(1, min(10, attempts))
     evaluator = Evaluator()
-    replay_result = await asyncio.to_thread(replay, case, agent, spec, evaluator, attempts=1)
+    replay_result = await asyncio.to_thread(replay, case, agent, spec, evaluator, attempts=n_attempts)
     return replay_result.model_dump(by_alias=True)
 
 
@@ -689,9 +1021,14 @@ async def replay_failure(failure_id: str, attempts: int = 1) -> FailureReplayRes
 
     # 1. Lookup failure and owning session
     async with _lock:
-        for rec in _sessions.values():
+        for rec in reversed(list(_sessions.values())):
             for f in rec.failures:
-                if f.id == failure_id:
+                if (
+                    f.id == failure_id
+                    or f.test_id == failure_id
+                    or f.id.endswith(f"_{failure_id}")
+                    or failure_id.endswith(f"_{f.test_id}")
+                ):
                     target_failure = f
                     target_record = rec
                     break
@@ -702,29 +1039,58 @@ async def replay_failure(failure_id: str, attempts: int = 1) -> FailureReplayRes
         stored_fail = await storage.failures.get(failure_id)
         if stored_fail:
             target_failure = stored_fail
+            if getattr(target_failure, "session_id", None):
+                target_record = await storage.sessions.get(target_failure.session_id)
 
     if not target_failure:
         raise FailureNotFoundError(failure_id)
 
-    # 2. Resolve Target Agent & Domain Spec from original session
+    # 2. Resolve Target Agent & Domain Spec from original session or failure
+    agent: TargetAgent | None = None
+    spec: TargetSpec | None = None
     if target_record:
         agent, spec = spec_for_agent(
             target_record.config.target_agent.id,
             target_record.config.target_agent.name,
             target_record.config.target_agent.endpoint,
         )
+    elif getattr(target_failure, "target_agent_id", None):
+        agent, spec = spec_for_agent(
+            target_failure.target_agent_id,
+            getattr(target_failure, "target_agent_name", None) or "",
+            getattr(target_failure, "target_agent_endpoint", None) or "",
+        )
     else:
         agent, spec = spec_for_agent("agent_default", "Target Agent", "")
+
+    if agent is None or spec is None:
+        raise TargetAdapterError(
+            f"Target agent adapter for failure '{failure_id}' is unavailable or cannot be resolved."
+        )
 
     # 3. Extract exact attacker messages (guarantees NO new attack generation)
     attacker_messages: list[str] = []
     if target_record:
         test_case = next((t for t in target_record.tests if t.id == target_failure.test_id), None)
         if test_case and test_case.conversation:
-            attacker_messages = [t.content for t in test_case.conversation if t.role == TurnRole.ADVERSIGHT]
+            attacker_messages = [
+                t.content
+                for t in test_case.conversation
+                if (t.role == TurnRole.ADVERSIGHT or t.role == "adversight") and t.content.strip()
+            ]
 
-    if not attacker_messages and target_failure.attack:
-        attacker_messages = [target_failure.attack]
+    if not attacker_messages and getattr(target_failure, "conversation", None):
+        attacker_messages = [
+            t.content
+            for t in target_failure.conversation
+            if (t.role == TurnRole.ADVERSIGHT or t.role == "adversight") and t.content.strip()
+        ]
+
+    if not attacker_messages and getattr(target_failure, "turns", None):
+        attacker_messages = [t.attack for t in target_failure.turns if t.attack and t.attack.strip()]
+
+    if not attacker_messages and target_failure.attack and target_failure.attack.strip():
+        attacker_messages = [target_failure.attack.strip()]
 
     if not attacker_messages:
         raise MissingReplayEvidenceError(
@@ -732,7 +1098,7 @@ async def replay_failure(failure_id: str, attempts: int = 1) -> FailureReplayRes
         )
 
     # 4. Construct exact ReplayCase
-    case_id = f"replay_{target_failure.id}"
+    case_id = getattr(target_failure, "replay_case_id", None) or f"replay_{target_failure.id}"
     strategy_name = (
         target_failure.strategy.value
         if hasattr(target_failure.strategy, "value")
@@ -748,6 +1114,18 @@ async def replay_failure(failure_id: str, attempts: int = 1) -> FailureReplayRes
         created_at=datetime.now(timezone.utc).isoformat(),
     )
 
+    # Publish REPLAY_STARTED event if session is available
+    if target_record:
+        await event_broker.publish(
+            target_record.session_id,
+            TestEvent(
+                session_id=target_record.session_id,
+                type=TestEventType.REPLAY_STARTED,
+                message=f"Starting exact replay for failure {failure_id} ({attempts} attempt(s))",
+                data={"failureId": failure_id, "attempts": attempts},
+            ),
+        )
+
     # 5. Execute replay using existing ReplayService & Evaluator
     evaluator = Evaluator()
     replay_result = await asyncio.to_thread(
@@ -755,13 +1133,21 @@ async def replay_failure(failure_id: str, attempts: int = 1) -> FailureReplayRes
     )
 
     # 6. Map attempt details
+    from app.services.replay_service import _normalize_failure_type
+
+    expected_norm = _normalize_failure_type(target_failure.type)
     attempt_details: list[ReplayAttemptDetail] = []
     for att in getattr(replay_result, "attempt_details", []):
         last_turn = att.turns[-1] if att.turns else None
-        last_resp = last_turn.response.text if last_turn else None
+        last_resp = sanitize_text(last_turn.response.text) if last_turn and last_turn.response.text else None
         tool_calls = (
             [
-                ToolCall(name=tc.name, arguments=tc.arguments, timestamp=_hhmmss())
+                ToolCall(
+                    name=tc.name,
+                    arguments=sanitize_dict(tc.arguments or {}),
+                    timestamp=_hhmmss(),
+                    turn_index=getattr(tc, "turn_index", None),
+                )
                 for t in att.turns
                 for tc in t.response.tool_calls
             ]
@@ -769,31 +1155,81 @@ async def replay_failure(failure_id: str, attempts: int = 1) -> FailureReplayRes
             else None
         )
 
+        matching_finding = next(
+            (
+                f
+                for f in att.findings
+                if _normalize_failure_type(f.type.value if hasattr(f.type, "value") else str(f.type))
+                == expected_norm
+            ),
+            None,
+        )
+
+        if att.error:
+            status_val = "error"
+            msg = f"Execution error during replay: {att.error}"
+            evidence_dict = {"error": att.error}
+        elif att.reproduced:
+            status_val = "reproduced"
+            msg = f"Failure condition '{target_failure.type}' was reproduced by policy evaluator."
+            evidence_dict = {
+                "violatedRule": getattr(matching_finding, "violated_rule", None)
+                if matching_finding
+                else None,
+                "description": getattr(matching_finding, "description", None)
+                if matching_finding
+                else None,
+                "detector": getattr(matching_finding, "detector", None)
+                if matching_finding
+                else None,
+                "confidence": getattr(matching_finding, "confidence", 1.0)
+                if matching_finding
+                else 1.0,
+            }
+        else:
+            status_val = "not_reproduced"
+            msg = "Failure condition was not reproduced; target agent adhered to safety policy."
+            evidence_dict = {}
+
         attempt_details.append(
             ReplayAttemptDetail(
+                attempt=att.attempt_number,
                 attempt_number=att.attempt_number,
+                status=status_val,
                 reproduced=att.reproduced,
-                status="failed" if att.reproduced else "passed",
+                failure_detected=att.reproduced,
+                failure_type=target_failure.type if att.reproduced else None,
+                message=msg,
                 error=att.error,
                 response_text=last_resp,
                 tool_calls=tool_calls if tool_calls else None,
+                evidence=evidence_dict,
                 timestamp=_hhmmss(),
             )
         )
 
     # 7. Formulate reproduction verdict
-    has_errors = any(att.error for att in attempt_details)
-    if has_errors and replay_result.reproduced_count == 0:
+    completed_attempts = getattr(replay_result, "completed_attempts", replay_result.attempts)
+    if completed_attempts == 0:
         verdict = "ERROR"
         status_val = "error"
-    else:
-        verdict = "REPRODUCED" if replay_result.reproduced else "NOT_REPRODUCED"
+        summary_text = (
+            f"Replay failed: all {replay_result.attempts} attempt(s) encountered execution errors."
+        )
+    elif replay_result.reproduced:
+        verdict = "REPRODUCED"
         status_val = "completed"
-
-    summary_text = (
-        f"{replay_result.reproduced_count}/{replay_result.attempts} attempts reproduced the failure "
-        f"({target_failure.type}). Verdict: {verdict}."
-    )
+        summary_text = (
+            f"{replay_result.reproduced_count}/{completed_attempts} completed attempt(s) reproduced the failure "
+            f"({target_failure.type}). Reproduction rate: {replay_result.reproduction_rate:.2f}. Verdict: REPRODUCED."
+        )
+    else:
+        verdict = "NOT_REPRODUCED"
+        status_val = "completed"
+        summary_text = (
+            f"0/{completed_attempts} completed attempt(s) reproduced the failure ({target_failure.type}). "
+            f"Reproduction rate: 0.00. Verdict: NOT_REPRODUCED."
+        )
 
     # 8. Log and stream event if session is available
     if target_record:
@@ -801,6 +1237,26 @@ async def replay_failure(failure_id: str, attempts: int = 1) -> FailureReplayRes
             target_record,
             LogEventType.POLICY_CHECK,
             f"Replay verified for {failure_id}: {verdict} ({replay_result.reproduced_count}/{replay_result.attempts})",
+        )
+        evt_type = (
+            TestEventType.REPLAY_FAILURE_REPRODUCED
+            if verdict == "REPRODUCED"
+            else (TestEventType.REPLAY_ERROR if verdict == "ERROR" else TestEventType.REPLAY_COMPLETED)
+        )
+        await event_broker.publish(
+            target_record.session_id,
+            TestEvent(
+                session_id=target_record.session_id,
+                type=evt_type,
+                message=summary_text,
+                data={
+                    "failureId": failure_id,
+                    "verdict": verdict,
+                    "reproduced": replay_result.reproduced,
+                    "reproductionRate": replay_result.reproduction_rate,
+                    "completedAttempts": completed_attempts,
+                },
+            ),
         )
 
     return FailureReplayResponse(
@@ -810,12 +1266,16 @@ async def replay_failure(failure_id: str, attempts: int = 1) -> FailureReplayRes
         reproduced=replay_result.reproduced,
         attempts=replay_result.attempts,
         successful_reproductions=replay_result.reproduced_count,
+        completed_attempts=completed_attempts,
         reproduction_rate=replay_result.reproduction_rate,
+        reproduced_count=replay_result.reproduced_count,
         original_failure_type=target_failure.type,
         original_test_id=target_failure.test_id,
         replay_case_id=case_id,
         summary=summary_text,
         replay_results=attempt_details,
+        findings=[f.model_dump(by_alias=True) for f in getattr(replay_result, "findings", [])],
+        turns=[t.model_dump(by_alias=True) for t in getattr(replay_result, "turns", [])],
     )
 
 

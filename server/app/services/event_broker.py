@@ -36,7 +36,10 @@ class EventBroker:
         async with self._lock:
             subscribers = list(self._subscribers.get(session_id, set()))
         for q in subscribers:
-            await q.put(event)
+            try:
+                q.put_nowait(event)
+            except Exception:
+                pass
 
     def publish_threadsafe(
         self, loop: asyncio.AbstractEventLoop, session_id: str, event: TestEvent

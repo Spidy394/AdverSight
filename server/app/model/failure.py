@@ -27,6 +27,15 @@ FAILURE_LABELS: dict[str, str] = {
 }
 
 
+class VerdictStatus(str, Enum):
+    PASS = "pass"
+    FAIL = "fail"
+    INCONCLUSIVE = "inconclusive"
+    TARGET_ERROR = "target_error"
+    PROVIDER_ERROR = "provider_error"
+    TIMEOUT = "timeout"
+
+
 # --------------------------------------------------------------------------- findings
 class Finding(Model):
     type: FailureType
@@ -37,15 +46,23 @@ class Finding(Model):
     turn_index: int = 0
     violated_rule: str | None = None
     tool_call: ToolCall | None = None
+    confidence_source: str | None = None
+    confidence_evidence: list[str] = Field(default_factory=list)
+    correlated_findings: list[Finding] = Field(default_factory=list)
 
 
 class Verdict(Model):
     passed: bool
+    status: str = "pass"
     findings: list[Finding] = Field(default_factory=list)
     primary: Finding | None = None
     needs_review: bool = False  # weak signal / LLM suspicion that the rules could not confirm
     review_note: str | None = None
     suspicions: list[Finding] = Field(default_factory=list)  # low-confidence signals (< fail threshold)
+    confidence: float = 1.0
+    confidence_source: str | None = None
+    confidence_evidence: list[str] = Field(default_factory=list)
+    reason: str | None = None
 
 
 # --------------------------------------------------------------------------- frontend contract
@@ -68,3 +85,11 @@ class Failure(Model):
     detector: str
     confidence: float
     replay_case_id: str
+    all_findings: list[Finding] = Field(default_factory=list)
+    turn_number: int | None = None
+    latency_ms: float | None = None
+    replayable: bool = True
+    confidence_source: str | None = None
+    confidence_evidence: list[str] = Field(default_factory=list)
+    reproducibility: str = "untested"
+    reproduction_rate: float | None = None

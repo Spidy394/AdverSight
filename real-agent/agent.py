@@ -114,7 +114,11 @@ class GeminiFlightAgent:
             return self._fallback_respond(message, history)
 
         system_instruction = VULNERABLE_SYSTEM_PROMPT if self.mode == "vulnerable" else HARDENED_SYSTEM_PROMPT
-        url = f"{self.BASE_URL}/{self.model}:generateContent?key={self.api_key}"
+        url = f"{self.BASE_URL}/{self.model}:generateContent"
+        headers = {
+            "x-goog-api-key": self.api_key,
+            "Content-Type": "application/json",
+        }
 
         payload: dict[str, Any] = {
             "contents": self._build_contents(message, history),
@@ -128,7 +132,7 @@ class GeminiFlightAgent:
 
         try:
             with httpx.Client(timeout=15.0) as client:
-                res = client.post(url, json=payload)
+                res = client.post(url, json=payload, headers=headers)
                 res.raise_for_status()
                 data = res.json()
 
@@ -159,5 +163,9 @@ class GeminiFlightAgent:
                 "tool_calls": tool_calls,
             }
         except Exception as exc:
-            logger.warning("Gemini API call failed (%s). Falling back to safe simulation.", exc)
+            err_str = str(exc)
+            if self.api_key and self.api_key in err_str:
+                err_str = err_str.replace(self.api_key, "[REDACTED]")
+            err_str = re.sub(r'key=[^&\s"\']+', 'key=[REDACTED]', err_str)
+            logger.warning("Gemini API call failed (%s). Falling back to safe simulation.", err_str)
             return self._fallback_respond(message, history)

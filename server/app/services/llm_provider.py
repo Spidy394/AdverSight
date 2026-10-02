@@ -34,6 +34,7 @@ class GeminiProvider(LLMProvider):
     """Google Gemini API provider using official Generative Language REST endpoints.
 
     Zero hardcoded credentials. Reads GEMINI_API_KEY from environment or constructor.
+    API keys are transmitted securely via headers and never leaked in URLs, logs, or error traces.
     """
 
     DEFAULT_MODEL = "gemini-1.5-flash"
@@ -44,16 +45,23 @@ class GeminiProvider(LLMProvider):
         api_key: str | None = None,
         model: str = DEFAULT_MODEL,
         timeout: float = 15.0,
+        client: httpx.Client | None = None,
     ) -> None:
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         self.model = model
         self.timeout = timeout
+        self._custom_client = client
 
     def generate(self, prompt: str, system: str | None = None) -> str:
         if not self.api_key:
             raise RuntimeError("GEMINI_API_KEY is not set in environment.")
 
-        url = f"{self.BASE_URL}/{self.model}:generateContent?key={self.api_key}"
+        # Transmit API key via header rather than query param to prevent URL/proxy logging leaks
+        url = f"{self.BASE_URL}/{self.model}:generateContent"
+        headers = {
+            "x-goog-api-key": self.api_key,
+            "Content-Type": "application/json",
+        }
         payload: dict[str, Any] = {
             "contents": [
                 {
@@ -72,10 +80,15 @@ class GeminiProvider(LLMProvider):
             }
 
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                resp = client.post(url, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
+            timeout_cfg = httpx.Timeout(self.timeout, connect=min(5.0, self.timeout))
+            if self._custom_client is not None:
+                resp = self._custom_client.post(url, json=payload, headers=headers)
+            else:
+                with httpx.Client(timeout=timeout_cfg) as client:
+                    resp = client.post(url, json=payload, headers=headers)
+
+            resp.raise_for_status()
+            data = resp.json()
 
             candidates = data.get("candidates", [])
             if not candidates:
@@ -87,8 +100,13 @@ class GeminiProvider(LLMProvider):
 
             return str(parts[0].get("text", "")).strip()
         except Exception as exc:
-            logger.warning("Gemini generation failed: %s", exc)
-            raise RuntimeError(f"Gemini API error: {exc}") from exc
+            import re
+            msg = str(exc)
+            if self.api_key and self.api_key in msg:
+                msg = msg.replace(self.api_key, "[REDACTED]")
+            msg = re.sub(r'key=[^&\s"\']+', 'key=[REDACTED]', msg)
+            logger.warning("Gemini generation failed: %s", msg)
+            raise RuntimeError(f"Gemini API error: {msg}") from None
 
 
 class MockLLMProvider(LLMProvider):

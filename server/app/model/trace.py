@@ -1,6 +1,8 @@
 """Trace data contracts: observability log events, replay cases/results, full session report."""
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import Field
 
 from app.model.failure import Failure, Finding
@@ -29,6 +31,8 @@ class ReplayCase(Model):
 class ReplayAttempt(Model):
     attempt_number: int
     reproduced: bool
+    status: str = "not_reproduced"
+    failure_type: str | None = None
     turns: list[Turn] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     error: str | None = None
@@ -41,8 +45,10 @@ class ReplayResult(Model):
     findings: list[Finding] = Field(default_factory=list)
     turns: list[Turn] = Field(default_factory=list)
     attempts: int = 1
+    completed_attempts: int = 1
     reproduced_count: int = 0
     reproduction_rate: float = 0.0  # LLM targets are non-deterministic: report how often it recurs
+    reproducibility: str = "untested"
     attempt_details: list[ReplayAttempt] = Field(default_factory=list)
 
 
@@ -53,3 +59,4 @@ class SessionReport(Model):
     logs: list[LogEvent]
     summary: SessionSummary
     replay_cases: list[ReplayCase]
+    adaptive_summary: dict[str, Any] | None = None

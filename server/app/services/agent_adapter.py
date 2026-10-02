@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import ipaddress
 import json
 import re
 import time
 from typing import Any, Protocol, runtime_checkable
+import urllib.parse
 
 import httpx
 
@@ -23,6 +25,7 @@ from app.model.test import (
     ToolCall,
     Turn,
 )
+from app.util.sanitizer import sanitize_dict, sanitize_text
 from app.util.trace_commons import AFFIRM, ASKS_CONFIRM, BYPASS
 
 
@@ -290,10 +293,184 @@ class InProcessAgentAdapter:
         return res
 
 
+MAX_REQUEST_BYTES: int = 65_536  # 64 KB
+MAX_RESPONSE_BYTES: int = 1_000_000  # 1 MB
+TRANSIENT_STATUS_CODES: frozenset[int] = frozenset({429, 502, 503, 504})
+
+
+def validate_agent_url(url: str, allow_local: bool = True) -> tuple[bool, str]:
+    """Validate target agent URL for safety against SSRF and unsupported schemes.
+
+    - Only http and https schemes are permitted.
+    - Cloud metadata endpoints (169.254.169.254, metadata.google.internal) are blocked.
+    - If allow_local=False, private and loopback IP spaces are blocked.
+    - Valid port range (1-65535) enforced when specified.
+    """
+    if not url or not isinstance(url, str):
+        return False, "Target URL must be a non-empty string."
+
+    try:
+        parsed = urllib.parse.urlsplit(url.strip())
+    except Exception as exc:
+        return False, f"Malformed URL: {exc}"
+
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        return False, f"Invalid URL scheme '{scheme}'. Only HTTP and HTTPS are permitted."
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "URL missing hostname."
+
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        return False, f"Invalid port: {exc}"
+
+    if port is not None:
+        if not (1 <= port <= 65535):
+            return False, f"Invalid port {port}. Must be between 1 and 65535."
+
+    host_lower = hostname.lower()
+    if host_lower in ("metadata.google.internal", "metadata", "instance-data"):
+        return False, f"Access to cloud metadata host '{hostname}' is blocked."
+
+    try:
+        ip = ipaddress.ip_address(host_lower)
+        if ip.is_link_local:
+            return False, f"Access to link-local IP '{ip}' is blocked."
+        if not allow_local:
+            if ip.is_loopback or ip.is_private or ip.is_unspecified:
+                return False, f"Access to local/private IP '{ip}' is blocked."
+    except ValueError:
+        if not allow_local and host_lower in ("localhost", "ip6-localhost", "ip6-loopback"):
+            return False, f"Access to local host '{hostname}' is blocked."
+
+    return True, ""
+
+
+def normalize_tool_calls(raw_tools: Any) -> list[ToolCall]:
+    """Normalize various tool-call shapes into canonical list[ToolCall].
+
+    Handles:
+    - Standard tool_calls list: [{"name": ..., "arguments": ...}]
+    - Single tool call dict
+    - Function call schema: [{"function": {"name": ..., "arguments": ...}}]
+    - Gemini functionCall schema: [{"functionCall": {"name": ..., "args": ...}}]
+    - Parameters alias: [{"name": ..., "parameters": ...}]
+    - JSON-string arguments: '{"destination": "Delhi"}' parsed safely
+    """
+    if not raw_tools:
+        return []
+
+    if isinstance(raw_tools, dict):
+        raw_list = [raw_tools]
+    elif isinstance(raw_tools, list):
+        raw_list = raw_tools
+    else:
+        return []
+
+    tool_calls: list[ToolCall] = []
+    for item in raw_list:
+        if not isinstance(item, dict):
+            continue
+
+        name = ""
+        args: Any = {}
+
+        # Direct name fields
+        if "name" in item and item["name"]:
+            name = str(item["name"])
+        elif "tool_name" in item and item["tool_name"]:
+            name = str(item["tool_name"])
+        elif "tool" in item and item["tool"]:
+            name = str(item["tool"])
+
+        # Nested function schema (OpenAI / generic)
+        if not name and isinstance(item.get("function"), dict):
+            fn = item["function"]
+            name = str(fn.get("name") or "")
+            if "arguments" in fn:
+                args = fn["arguments"]
+            elif "parameters" in fn:
+                args = fn["parameters"]
+
+        # Nested functionCall schema (Gemini REST)
+        if not name and isinstance(item.get("functionCall"), dict):
+            fn = item["functionCall"]
+            name = str(fn.get("name") or "")
+            args = fn.get("args") or fn.get("arguments") or {}
+
+        # Extract arguments if not found nested
+        if not args:
+            if "arguments" in item:
+                args = item["arguments"]
+            elif "parameters" in item:
+                args = item["parameters"]
+            elif "args" in item:
+                args = item["args"]
+
+        # Parse string arguments (JSON)
+        if isinstance(args, str):
+            try:
+                parsed_args = json.loads(args)
+                args = parsed_args if isinstance(parsed_args, dict) else {"raw": args}
+            except Exception:
+                args = {"raw": args}
+        elif not isinstance(args, dict):
+            args = {}
+
+        if name:
+            clean_name = sanitize_text(name.strip())
+            clean_args = sanitize_dict(args)
+            tool_calls.append(ToolCall(name=clean_name, arguments=clean_args))
+
+    return tool_calls
+
+
+def normalize_response_text(data: Any, tool_calls: list[ToolCall]) -> str:
+    """Normalize varied agent response text representations.
+
+    Extracts text from keys: text, response, message, content, output, answer, or choices[0].
+    Provides fallback informative text if response was empty but tool calls exist.
+    """
+    if isinstance(data, str):
+        return sanitize_text(data.strip())
+
+    text = ""
+    if isinstance(data, dict):
+        for field_name in ("text", "response", "message", "output", "content", "answer"):
+            val = data.get(field_name)
+            if isinstance(val, str) and val.strip():
+                text = val.strip()
+                break
+            elif isinstance(val, dict):
+                inner = val.get("content") or val.get("text")
+                if isinstance(inner, str) and inner.strip():
+                    text = inner.strip()
+                    break
+
+        # OpenAI choices format
+        if not text and isinstance(data.get("choices"), list) and data["choices"]:
+            first = data["choices"][0]
+            if isinstance(first, dict):
+                msg = first.get("message")
+                if isinstance(msg, dict):
+                    text = str(msg.get("content") or "").strip()
+                elif isinstance(first.get("text"), str):
+                    text = first["text"].strip()
+
+    if not text and tool_calls:
+        text = f"Calling tool {tool_calls[0].name}..."
+
+    return sanitize_text(text)
+
+
 class HttpAgentAdapter:
     """Adapter for connecting to external HTTP / Webhook target AI agents.
 
     Normalizes outbound turns and parses normalized text, tool calls, and latency.
+    Provides SSRF protection, bounded request/response sizes, and selective transient retries.
     """
 
     def __init__(
@@ -301,54 +478,239 @@ class HttpAgentAdapter:
         endpoint: str,
         timeout: float = 15.0,
         headers: dict[str, str] | None = None,
+        max_retries: int = 2,
+        retry_backoff: float = 0.05,
+        max_response_bytes: int = MAX_RESPONSE_BYTES,
+        allow_local: bool = True,
+        client: httpx.Client | None = None,
     ) -> None:
         self.endpoint = endpoint
         self.timeout = timeout
         self.headers = headers or {"Content-Type": "application/json"}
+        self.max_retries = max_retries
+        self.retry_backoff = retry_backoff
+        self.max_response_bytes = max_response_bytes
+        self.allow_local = allow_local
+        self._custom_client = client
 
     def respond(self, message: str, history: list[Turn]) -> AgentResponse:
         start_t = time.perf_counter()
+
+        # 1. URL & Scheme Validation (SSRF safeguard)
+        valid_url, url_err = validate_agent_url(self.endpoint, allow_local=self.allow_local)
+        if not valid_url:
+            latency = (time.perf_counter() - start_t) * 1000
+            err_msg = f"Invalid target URL: {url_err}"
+            return AgentResponse(
+                text=f"Target agent connection error: {err_msg}",
+                metadata={
+                    "error": err_msg,
+                    "error_type": "security_validation_error",
+                    "retry_count": 0,
+                },
+                latency_ms=latency,
+            )
+
+        # 2. Bound request payload size
+        bounded_message = message
+        if len(bounded_message) > MAX_REQUEST_BYTES:
+            bounded_message = bounded_message[:MAX_REQUEST_BYTES] + "\n[TRUNCATED: request length exceeded limit]"
+
         payload = {
-            "message": message,
+            "message": bounded_message,
             "history": [
                 {
-                    "attack": t.attack,
-                    "response": t.response.text,
+                    "attack": t.attack[:MAX_REQUEST_BYTES] if len(t.attack) > MAX_REQUEST_BYTES else t.attack,
+                    "response": t.response.text[:MAX_REQUEST_BYTES] if len(t.response.text) > MAX_REQUEST_BYTES else t.response.text,
                     "toolCalls": [tc.model_dump() for tc in t.response.tool_calls],
                 }
                 for t in history
             ],
+            "metadata": {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
         }
 
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                res = client.post(self.endpoint, json=payload, headers=self.headers)
+        retries_attempted = 0
+        last_error_type = "target_error"
+        last_err_msg = ""
+        last_status_code: int | None = None
+
+        timeout_cfg = httpx.Timeout(self.timeout, connect=min(5.0, self.timeout))
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                if self._custom_client is not None:
+                    res = self._custom_client.post(self.endpoint, json=payload, headers=self.headers)
+                else:
+                    with httpx.Client(timeout=timeout_cfg) as client:
+                        res = client.post(self.endpoint, json=payload, headers=self.headers)
+
                 latency = (time.perf_counter() - start_t) * 1000
-                res.raise_for_status()
-                data = res.json()
+                last_status_code = res.status_code
 
-            # Extract normalized response
-            text = data.get("text") or data.get("response") or data.get("message") or ""
-            raw_tools = data.get("tool_calls") or data.get("toolCalls") or []
-            tool_calls = [
-                ToolCall(name=tc.get("name", ""), arguments=tc.get("arguments", {}))
-                for tc in raw_tools
-            ]
+                # Transient server errors: 429, 502, 503, 504 -> bounded retry
+                if res.status_code in TRANSIENT_STATUS_CODES:
+                    last_error_type = "target_error"
+                    last_err_msg = f"HTTP {res.status_code}"
+                    if attempt < self.max_retries:
+                        retries_attempted += 1
+                        time.sleep(self.retry_backoff * (2 ** attempt))
+                        continue
+                    return AgentResponse(
+                        text=f"Target agent connection error: HTTP {res.status_code}",
+                        metadata={
+                            "error": last_err_msg,
+                            "error_type": last_error_type,
+                            "status_code": res.status_code,
+                            "retry_count": retries_attempted,
+                        },
+                        latency_ms=latency,
+                    )
 
-            return AgentResponse(
-                text=text,
-                tool_calls=tool_calls,
-                metadata={"http_status": res.status_code},
-                latency_ms=latency,
-                raw=data,
-            )
-        except Exception as exc:
-            latency = (time.perf_counter() - start_t) * 1000
-            return AgentResponse(
-                text=f"Target agent connection error: {exc}",
-                metadata={"error": str(exc)},
-                latency_ms=latency,
-            )
+                # Non-transient client errors: 4xx (do NOT retry)
+                if 400 <= res.status_code < 500:
+                    return AgentResponse(
+                        text=f"Target agent connection error: HTTP {res.status_code}",
+                        metadata={
+                            "error": f"HTTP {res.status_code}",
+                            "error_type": "http_error",
+                            "status_code": res.status_code,
+                            "retry_count": retries_attempted,
+                        },
+                        latency_ms=latency,
+                    )
+
+                # Non-transient other 5xx errors (e.g. 500 Internal Server Error)
+                if res.status_code >= 500:
+                    return AgentResponse(
+                        text=f"Target agent connection error: HTTP {res.status_code}",
+                        metadata={
+                            "error": f"HTTP {res.status_code}",
+                            "error_type": "target_error",
+                            "status_code": res.status_code,
+                            "retry_count": retries_attempted,
+                        },
+                        latency_ms=latency,
+                    )
+
+                # Check response payload size
+                content_len = res.headers.get("Content-Length")
+                if content_len and content_len.isdigit() and int(content_len) > self.max_response_bytes:
+                    return AgentResponse(
+                        text="Target agent connection error: Response size exceeds maximum allowed limit (1MB).",
+                        metadata={
+                            "error": "Response payload too large",
+                            "error_type": "payload_too_large",
+                            "status_code": res.status_code,
+                            "retry_count": retries_attempted,
+                        },
+                        latency_ms=latency,
+                    )
+
+                if len(res.content) > self.max_response_bytes:
+                    return AgentResponse(
+                        text="Target agent connection error: Response size exceeds maximum allowed limit (1MB).",
+                        metadata={
+                            "error": "Response payload too large",
+                            "error_type": "payload_too_large",
+                            "status_code": res.status_code,
+                            "retry_count": retries_attempted,
+                        },
+                        latency_ms=latency,
+                    )
+
+                # Decode JSON
+                try:
+                    data = res.json()
+                except Exception as exc:
+                    return AgentResponse(
+                        text=f"Target agent connection error: Malformed JSON ({exc})",
+                        metadata={
+                            "error": f"Malformed JSON: {exc}",
+                            "error_type": "malformed_response",
+                            "status_code": res.status_code,
+                            "retry_count": retries_attempted,
+                        },
+                        latency_ms=latency,
+                    )
+
+                # Normalize tool calls and response text
+                raw_tools = (
+                    data.get("tool_calls")
+                    or data.get("toolCalls")
+                    or data.get("tools")
+                    or data.get("function_call")
+                    or data.get("functionCall")
+                    if isinstance(data, dict)
+                    else []
+                )
+                tool_calls = normalize_tool_calls(raw_tools)
+                text = normalize_response_text(data, tool_calls)
+
+                meta: dict[str, Any] = {
+                    "http_status": res.status_code,
+                    "retry_count": retries_attempted,
+                }
+                if isinstance(data, dict) and "metadata" in data and isinstance(data["metadata"], dict):
+                    meta["target_metadata"] = sanitize_dict(data["metadata"])
+
+                return AgentResponse(
+                    text=text,
+                    tool_calls=tool_calls,
+                    metadata=meta,
+                    latency_ms=latency,
+                    raw=sanitize_dict(data) if isinstance(data, dict) else str(data)[:1000],
+                )
+
+            except httpx.TimeoutException as exc:
+                latency = (time.perf_counter() - start_t) * 1000
+                last_error_type = "timeout"
+                last_err_msg = sanitize_text(str(exc))
+                if attempt < self.max_retries:
+                    retries_attempted += 1
+                    time.sleep(self.retry_backoff * (2 ** attempt))
+                    continue
+                return AgentResponse(
+                    text=f"Target agent connection error: Request timed out ({last_err_msg})",
+                    metadata={
+                        "error": last_err_msg,
+                        "error_type": "timeout",
+                        "retry_count": retries_attempted,
+                    },
+                    latency_ms=latency,
+                )
+
+            except httpx.NetworkError as exc:
+                latency = (time.perf_counter() - start_t) * 1000
+                last_error_type = "network_error"
+                last_err_msg = sanitize_text(str(exc))
+                if attempt < self.max_retries:
+                    retries_attempted += 1
+                    time.sleep(self.retry_backoff * (2 ** attempt))
+                    continue
+                return AgentResponse(
+                    text=f"Target agent connection error: Network error ({last_err_msg})",
+                    metadata={
+                        "error": last_err_msg,
+                        "error_type": "network_error",
+                        "retry_count": retries_attempted,
+                    },
+                    latency_ms=latency,
+                )
+
+            except Exception as exc:
+                latency = (time.perf_counter() - start_t) * 1000
+                err_msg = sanitize_text(str(exc))
+                return AgentResponse(
+                    text=f"Target agent connection error: {err_msg}",
+                    metadata={
+                        "error": err_msg,
+                        "error_type": "target_error",
+                        "retry_count": retries_attempted,
+                    },
+                    latency_ms=latency,
+                )
 
 
 # ── Agent Selector & Factory ────────────────────────────────────────────────────

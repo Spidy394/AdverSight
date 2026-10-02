@@ -10,6 +10,7 @@ from datetime import datetime
 
 from app.model.test import AttackCategory, AttackScenario, TargetSpec, TestResult, Turn
 from app.model.trace import LogEvent, SessionReport
+from app.services.adaptive_controller import AdaptiveState
 from app.services.attack_generator import AttackGenerator
 from app.services.evaluator import Evaluator, summarize
 from app.services.replay_service import build_failure, build_replay_case
@@ -32,6 +33,7 @@ class TestRunner:
         on_turn: Callable[[str, Turn], None] | None = None,
         on_failure: Callable[[Any], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
+        adaptive_state: AdaptiveState | None = None,
     ):
         self.agent, self.spec = agent, spec
         self.generator = generator or AttackGenerator()
@@ -41,6 +43,13 @@ class TestRunner:
         self.on_turn, self.on_failure = on_turn, on_failure
         self.cancel_check = cancel_check
         self.logs: list[LogEvent] = []
+        self.adaptive_state = (
+            adaptive_state or getattr(self.generator, "adaptive_state", None) or AdaptiveState()
+        )
+        if hasattr(self.generator, "attach_state"):
+            self.generator.attach_state(self.adaptive_state)
+        self._known_weaknesses: set[Any] = set()
+        self._last_verdict: Any = None
 
     def _log(self, type_: str, message: str) -> None:
         ev = LogEvent(timestamp=datetime.now().strftime("%H:%M:%S"), type=type_, message=message)
@@ -63,8 +72,25 @@ class TestRunner:
             sc = pending.popleft()
             res = self.run_test(sc)
             results.append(res)
+            verdict = getattr(self, "_last_verdict", None)
             if res.status in ("passed", "failed"):
-                self.generator.record_outcome(sc.strategy, res.status == "failed")
+                self.generator.record_outcome(
+                    sc.strategy,
+                    res.status == "failed",
+                    scenario=sc,
+                    result=res,
+                    verdict=verdict,
+                )
+                if hasattr(self.adaptive_state, "identified_weaknesses"):
+                    current_w = set(self.adaptive_state.identified_weaknesses)
+                    new_w = current_w - self._known_weaknesses
+                    for w in new_w:
+                        self._log(
+                            "WEAKNESS_IDENTIFIED",
+                            f"Identified target weakness: {w.value} on {sc.id}",
+                        )
+                        self._known_weaknesses.add(w)
+
             rest = self.generator.prioritize(list(pending))  # learn: best strategies first
             if res.status == "failed" and rest and variants < max_variants:
                 victim = rest.pop()  # sacrifice the least promising pending test
@@ -72,7 +98,8 @@ class TestRunner:
                 if variant:
                     variants += 1
                     rest.insert(0, variant)
-                    self._log("ATTACK_ADAPTED", f"variant of {sc.id} queued (same weakness, new framing)")
+                    desc = getattr(variant, "mutation_type", None) or "same weakness, new framing"
+                    self._log("ATTACK_ADAPTED", f"variant of {sc.id} queued ({desc})")
                 else:
                     rest.append(victim)
             for k, s in enumerate(rest):  # keep ids sequential in execution order
@@ -88,6 +115,7 @@ class TestRunner:
             logs=self.logs,
             summary=summary,
             replay_cases=list(self.store.replay_cases.values()),
+            adaptive_summary=self.adaptive_state.summary() if hasattr(self.adaptive_state, "summary") else None,
         )
 
     def run_test(self, sc: AttackScenario) -> TestResult:
@@ -122,6 +150,7 @@ class TestRunner:
 
         self._log("RESPONSE_ANALYZED", f"{sc.id} {len(turns)} turn(s)")
         verdict = self.evaluator.evaluate(self.spec, turns)
+        self._last_verdict = verdict
         result.turns = turns
         result.response = turns[-1].response.text if turns else ""
         result.needs_review = verdict.needs_review

@@ -40,6 +40,7 @@ class AttackCategory(str, Enum):
 class ToolCall(Model):
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    turn_index: int | None = None
 
 
 class AgentResponse(Model):
@@ -94,6 +95,8 @@ class AttackScenario(Model):
     origin: Literal["template", "llm"] = "template"
     max_turns: int = 5
     derived_from: str | None = None  # id of the failed test this variant was spawned from
+    mutation_type: str | None = None
+    dominant_weakness: str | None = None
 
 
 # --------------------------------------------------------------------------- frontend contract

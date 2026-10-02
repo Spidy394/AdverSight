@@ -1,10 +1,11 @@
 """Failure Evidence and Exact Replay routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Body, HTTPException, status
 
 from app.model.session import Failure, FailureReplayResponse, ReplayRequest
 from app.services import session_service as service
+from app.util.sanitizer import sanitize_text
 
 router = APIRouter(tags=["failures"])
 
@@ -31,19 +32,28 @@ async def get_failure(failure_id: str) -> Failure:
         "using recorded attacker turns without generating new attacks, and evaluates reproduction consistency."
     ),
     responses={
-        status.HTTP_404_NOT_FOUND: {"description": "Failure evidence record was not found."},
-        422: {
-            "description": "Invalid replay configuration (attempts out of 1-10 range) or missing conversation evidence."
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Failure evidence record was not found.",
+        },
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "description": "Invalid replay configuration (attempts out of 1-10 range) or missing conversation evidence.",
+        },
+        status.HTTP_502_BAD_GATEWAY: {
+            "description": "Target agent adapter is unreachable or unavailable.",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "Unexpected server error during replay execution.",
         },
     },
 )
 async def replay_failure(
     failure_id: str,
-    payload: ReplayRequest = ReplayRequest(),
+    payload: ReplayRequest | None = Body(default=None),
 ) -> FailureReplayResponse:
     """Execute exact deterministic replay of a recorded failure."""
+    attempts = payload.attempts if payload is not None else 1
     try:
-        return await service.replay_failure(failure_id=failure_id, attempts=payload.attempts)
+        return await service.replay_failure(failure_id=failure_id, attempts=attempts)
     except service.FailureNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -51,11 +61,16 @@ async def replay_failure(
         ) from exc
     except service.MissingReplayEvidenceError as exc:
         raise HTTPException(
-            status_code=422,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    except service.TargetAdapterError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Replay execution failed: {exc}",
+            detail=f"Replay execution failed: {sanitize_text(str(exc))}",
         ) from exc

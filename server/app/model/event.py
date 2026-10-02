@@ -29,6 +29,14 @@ class TestEventType(StrEnum):
     SESSION_STOPPED = "session_stopped"
     SESSION_ERROR = "session_error"
     SESSION_STATE = "session_state"
+    REPLAY_STARTED = "replay_started"
+    REPLAY_ATTEMPT_STARTED = "replay_attempt_started"
+    REPLAY_ATTEMPT_COMPLETED = "replay_attempt_completed"
+    REPLAY_FAILURE_REPRODUCED = "replay_failure_reproduced"
+    REPLAY_COMPLETED = "replay_completed"
+    REPLAY_ERROR = "replay_error"
+    ATTACK_ADAPTED = "attack_adapted"
+    WEAKNESS_IDENTIFIED = "weakness_identified"
 
 
 class TestEvent(BaseModel):

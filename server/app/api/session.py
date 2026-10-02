@@ -120,6 +120,11 @@ async def stream_session(
         # 1. Initial state snapshot
         progress = service._derive_progress(record)
         initial_data = {
+            "id": f"state_{session_id}",
+            "sessionId": session_id,
+            "timestamp": service._hhmmss(),
+            "type": TestEventType.SESSION_STATE.value,
+            "message": f"Session {session_id} state",
             "status": record.status.value,
             "testsCompleted": progress.completed,
             "testsPassed": progress.passed,
@@ -127,6 +132,12 @@ async def stream_session(
             "progress": progress.model_dump(by_alias=True),
             "config": record.config.model_dump(by_alias=True),
             "activeTestId": record.active_test_id,
+            "data": {
+                "status": record.status.value,
+                "progress": progress.model_dump(by_alias=True),
+                "config": record.config.model_dump(by_alias=True),
+                "activeTestId": record.active_test_id,
+            },
         }
         yield ServerSentEvent(
             id=f"state_{session_id}",
@@ -136,10 +147,21 @@ async def stream_session(
 
         # If already completed, stream terminal event and return
         if record.status is service.SessionStatus.COMPLETED:
+            done_data = {
+                "id": f"done_{session_id}",
+                "sessionId": session_id,
+                "timestamp": service._hhmmss(),
+                "type": TestEventType.SESSION_COMPLETED.value,
+                "message": f"Session completed — {progress.passed} passed, {progress.failed} failed",
+                "data": {
+                    "progress": progress.model_dump(by_alias=True),
+                    "failuresCount": len(record.failures),
+                },
+            }
             yield ServerSentEvent(
                 id=f"done_{session_id}",
                 event=TestEventType.SESSION_COMPLETED.value,
-                data={"progress": progress.model_dump(by_alias=True)},
+                data=done_data,
             )
             return
 

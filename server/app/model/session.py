@@ -19,9 +19,9 @@ Serialization notes:
 """
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -36,6 +36,7 @@ class TestStatus(StrEnum):
     RUNNING = "running"
     PASSED = "passed"
     FAILED = "failed"
+    INCONCLUSIVE = "inconclusive"
 
 
 class SessionStatus(StrEnum):
@@ -105,6 +106,8 @@ class LogEventType(StrEnum):
     TEST_COMPLETED = "TEST_COMPLETED"
     SESSION_STARTED = "SESSION_STARTED"
     SESSION_COMPLETED = "SESSION_COMPLETED"
+    ATTACK_ADAPTED = "ATTACK_ADAPTED"
+    WEAKNESS_IDENTIFIED = "WEAKNESS_IDENTIFIED"
 
 
 # ── Shared base ─────────────────────────────────────────────────────────────────
@@ -131,6 +134,8 @@ class TargetAgent(AdverSightModel):
     endpoint: str
     agent_type: AgentType
     connected: bool = False
+    kind: str | None = None
+    request_timeout_seconds: float | None = None
 
 
 class TestSessionConfig(AdverSightModel):
@@ -153,6 +158,9 @@ class ConversationTurn(AdverSightModel):
     role: TurnRole
     content: str
     timestamp: str
+    turn_number: int | None = None
+    tool_calls: list[ToolCall] | None = None
+    latency_ms: float | None = None
 
 
 class ToolCall(AdverSightModel):
@@ -161,19 +169,25 @@ class ToolCall(AdverSightModel):
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
     timestamp: str
+    turn_index: int | None = None
+    result: Any | None = None
+    authorized: bool | None = None
 
 
 class TestCase(AdverSightModel):
     """TS: ``TestCase``."""
 
     id: str
+    session_id: str | None = None
     test_number: int
     strategy: AttackCategory
     attack: str
     status: TestStatus
     conversation: list[ConversationTurn] = Field(default_factory=list)
+    turns: list[ConversationTurn] = Field(default_factory=list)
     response: str | None = None
     tool_calls: list[ToolCall] | None = None
+    failure_id: str | None = None
     failure_type: str | None = None
     failure_description: str | None = None
     started_at: str | None = None
@@ -202,6 +216,27 @@ class Failure(AdverSightModel):
     tool_calls: list[ToolCall] | None = None
     why_it_failed: str
     timestamp: str
+    session_id: str | None = None
+    target_agent_id: str | None = None
+    target_agent_name: str | None = None
+    target_agent_endpoint: str | None = None
+    replay_case_id: str | None = None
+    conversation: list[ConversationTurn] | None = None
+    violated_rule: str | None = None
+    violated_policy: str | None = None
+    detector: str | None = None
+    confidence: float | None = None
+    reason: str | None = None
+    evidence: dict[str, Any] | None = None
+    turn_number: int | None = None
+    latency_ms: float | None = None
+    detector_results: list[dict[str, Any]] | None = None
+    replayable: bool = True
+    confidence_source: str | None = None
+    confidence_evidence: list[str] | None = None
+    reproducibility: str | None = None
+    reproduction_rate: float | None = None
+
 
 
 # ── Observability Log ───────────────────────────────────────────────────────────
@@ -235,9 +270,19 @@ class SessionDashboard(AdverSightModel):
     """TS: ``DashboardData`` — the single response shape for every route."""
 
     session_id: str
+    id: str | None = None
     status: SessionStatus
+    target_agent: TargetAgent | None = None
     config: TestSessionConfig
+    configuration: TestSessionConfig | None = None
     progress: TestProgress
+    total_tests: int | None = None
+    completed_tests: int | None = None
+    passed_tests: int | None = None
+    failed_tests: int | None = None
+    created_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
     tests: list[TestCase] = Field(default_factory=list)
     failures: list[Failure] = Field(default_factory=list)
     logs: list[LogEvent] = Field(default_factory=list)
@@ -250,7 +295,16 @@ class SessionDashboard(AdverSightModel):
 class SessionCreate(AdverSightModel):
     """Body of ``POST /api/v1/sessions``."""
 
-    config: TestSessionConfig
+    config: TestSessionConfig | None = None
+    configuration: TestSessionConfig | None = None
+
+    @model_validator(mode="after")
+    def resolve_config(self) -> Self:
+        if self.config is None and self.configuration is not None:
+            self.config = self.configuration
+        if self.config is None:
+            raise ValueError("Session configuration is required.")
+        return self
 
 
 # ── Replay Contracts ────────────────────────────────────────────────────────────
@@ -270,12 +324,17 @@ class ReplayRequest(AdverSightModel):
 class ReplayAttemptDetail(AdverSightModel):
     """Detailed observation of a single replay attempt."""
 
-    attempt_number: int
+    attempt: int
+    attempt_number: int | None = None
+    status: str  # "reproduced" | "not_reproduced" | "error"
     reproduced: bool
-    status: str
+    failure_detected: bool = False
+    failure_type: str | None = None
+    message: str | None = None
     error: str | None = None
     response_text: str | None = None
     tool_calls: list[ToolCall] | None = None
+    evidence: dict[str, Any] | None = None
     timestamp: str | None = None
 
 
@@ -288,9 +347,13 @@ class FailureReplayResponse(AdverSightModel):
     reproduced: bool
     attempts: int
     successful_reproductions: int
+    completed_attempts: int = 1
     reproduction_rate: float
+    reproduced_count: int | None = None
     original_failure_type: str
     original_test_id: str
     replay_case_id: str
     summary: str
     replay_results: list[ReplayAttemptDetail] = Field(default_factory=list)
+    findings: list[Any] = Field(default_factory=list)
+    turns: list[Any] = Field(default_factory=list)
