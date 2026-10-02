@@ -1,8 +1,14 @@
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import Dashboard from "@/pages/Dashboard";
 
-const App = () => {
+export default function App() {
   return (
-    <div className="flex items-center justify-center h-screen bg-amber-400">Yo</div>
-  )
+    <BrowserRouter>
+      <Routes>
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
-
-export default App
