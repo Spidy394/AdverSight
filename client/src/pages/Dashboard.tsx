@@ -1256,6 +1256,7 @@ export default function Dashboard() {
       </main>
 
       <FailureDetails
+        key={selectedFailure?.id ?? "none"}
         failure={selectedFailure}
         onClose={() => setSelectedFailure(null)}
       />

@@ -97,6 +97,63 @@ export interface Failure {
   timestamp: string;
 }
 
+export type ReplayFindingType =
+  | "unauthorized_action"
+  | "policy_violation"
+  | "goal_hijacking"
+  | "context_manipulation"
+  | "tool_misuse"
+  | "information_exposure";
+
+export interface ReplayToolCall {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface ReplayFinding {
+  type: ReplayFindingType;
+  severity: Severity;
+  description: string;
+  detector: string;
+  confidence: number;
+  turnIndex: number;
+  violatedRule?: string | null;
+  toolCall?: ReplayToolCall | null;
+}
+
+export interface ReplayAgentResponse {
+  text: string;
+  toolCalls: ReplayToolCall[];
+  metadata: Record<string, unknown>;
+  latencyMs: number;
+  raw?: unknown;
+}
+
+export interface ReplayTurn {
+  attack: string;
+  response: ReplayAgentResponse;
+}
+
+export interface ReplayResponse {
+  replayCaseId: string;
+  reproduced: boolean;
+  status: TestStatus;
+  findings: ReplayFinding[];
+  turns: ReplayTurn[];
+  attempts: number;
+  reproducedCount: number;
+  reproductionRate: number;
+}
+
+export interface ReplayAttempt {
+  attempt: number;
+  result: ReplayResponse;
+}
+
+export interface ReplayConfiguration {
+  attempts: number;
+}
+
 // ── Observability Log ─────────────────────────────────────────────────────────
 
 export type LogEventType =

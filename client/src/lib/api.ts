@@ -1,7 +1,11 @@
 // AdverSight — API Client
 // Connects the React dashboard to the FastAPI backend and SSE stream.
 
-import type { DashboardData, TestSessionConfig } from "@/types/testing";
+import type {
+  DashboardData,
+  ReplayResponse,
+  TestSessionConfig,
+} from "@/types/testing";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
 
@@ -61,6 +65,71 @@ export async function stopSession(sessionId: string): Promise<DashboardData> {
     throw new Error(`Failed to stop session: ${res.status} ${res.statusText}`);
   }
   return res.json();
+}
+
+export class ReplayApiError extends Error {
+  readonly status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = "ReplayApiError";
+    this.status = status;
+  }
+}
+
+function isReplayResponse(value: unknown): value is ReplayResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const result = value as Record<string, unknown>;
+  const validStatuses = ["pending", "running", "passed", "failed"];
+  return (
+    typeof result.replayCaseId === "string" &&
+    typeof result.reproduced === "boolean" &&
+    typeof result.status === "string" &&
+    validStatuses.includes(result.status) &&
+    Array.isArray(result.findings) &&
+    Array.isArray(result.turns) &&
+    typeof result.attempts === "number" &&
+    typeof result.reproducedCount === "number" &&
+    typeof result.reproductionRate === "number"
+  );
+}
+
+export async function replayTestCase(testId: string): Promise<ReplayResponse> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE_URL}/tests/${encodeURIComponent(testId)}/replay`,
+      { method: "POST", signal: AbortSignal.timeout(30_000) },
+    );
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") {
+      throw new ReplayApiError("Replay request timed out after 30 seconds.");
+    }
+    throw new ReplayApiError("Could not reach the replay service. Check the API connection and retry.");
+  }
+
+  if (!response.ok) {
+    let detail: string | undefined;
+    try {
+      const body: unknown = await response.json();
+      if (typeof body === "object" && body !== null && "detail" in body) {
+        const value = body.detail;
+        if (typeof value === "string") detail = value;
+      }
+    } catch {
+      // Use the HTTP status when the server did not return a JSON error body.
+    }
+    throw new ReplayApiError(
+      detail ?? `Replay request failed with HTTP ${response.status}.`,
+      response.status,
+    );
+  }
+
+  const body: unknown = await response.json();
+  if (!isReplayResponse(body)) {
+    throw new ReplayApiError("Replay service returned an invalid result.", response.status);
+  }
+  return body;
 }
 
 export function connectToSessionStream(
