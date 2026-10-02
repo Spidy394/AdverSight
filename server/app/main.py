@@ -1,7 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.agents import router as agents_router
+from app.api.failures import router as failures_router
 from app.api.session import router as session_router
+from app.api.test import router as test_router
 
 # Dev origins for the Vite client. Promote to an env-driven setting once the
 # API needs configuration beyond this.
@@ -19,14 +22,17 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    # No cookies or auth headers yet; credentials stay off so the origins can
-    # be widened to "*" later without tripping the CORS spec.
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(session_router)
+# Mount all API endpoints under both /api/v1 and /api for full frontend & client compatibility
+for prefix in ("/api/v1", "/api"):
+    app.include_router(session_router, prefix=f"{prefix}/sessions")
+    app.include_router(failures_router, prefix=f"{prefix}/failures")
+    app.include_router(test_router, prefix=f"{prefix}/tests")
+    app.include_router(agents_router, prefix=f"{prefix}/agents")
 
 
 @app.get("/health")

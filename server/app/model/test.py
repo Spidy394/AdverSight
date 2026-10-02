@@ -45,6 +45,9 @@ class ToolCall(Model):
 class AgentResponse(Model):
     text: str
     tool_calls: list[ToolCall] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    latency_ms: float = 0.0
+    raw: Any = None
 
 
 class Turn(Model):
@@ -97,6 +100,7 @@ class AttackScenario(Model):
 class TestResult(Model):
     """Superset of the frontend ``TestCase`` interface."""
 
+    __test__ = False
     id: str
     strategy: str
     attack: str

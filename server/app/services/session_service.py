@@ -32,10 +32,13 @@ from app.model.session import (
     TurnRole,
 )
 from app.model.test import AttackCategory as EngineCat, TestResult, Turn
-from app.model.trace import LogEvent as AppModelLogEvent
-from app.services.demo_agents import FlightBookingAgent, flight_spec
+from app.model.trace import LogEvent as AppModelLogEvent, ReplayCase
+from app.services.agent_adapter import get_agent_catalog, spec_for_agent
+from app.services.evaluator import Evaluator
 from app.services.event_broker import event_broker
+from app.services.replay_service import replay
 from app.services.testing_engine import TestRunner
+from app.storage.repository import storage
 from app.util.trace_commons import TargetAgent
 
 
@@ -255,8 +258,11 @@ async def _run_session_worker(
     if cancel_event.is_set():
         return
 
-    agent = _select_agent(record.config)
-    spec = flight_spec()
+    agent, spec = spec_for_agent(
+        record.config.target_agent.id,
+        record.config.target_agent.name,
+        record.config.target_agent.endpoint,
+    )
 
     raw_cats = record.config.attack_categories
     if raw_cats:
@@ -585,3 +591,82 @@ def build_dashboard(record: SessionRecord) -> SessionDashboard:
         logs=list(record.logs),
         active_test_id=record.active_test_id,
     )
+
+
+async def get_session_tests(session_id: str) -> list[TestCase]:
+    """Retrieve all test cases for a given session."""
+    record = await get_session(session_id)
+    return list(record.tests)
+
+
+async def get_session_failures(session_id: str) -> list[Failure]:
+    """Retrieve all failure evidence records for a given session."""
+    record = await get_session(session_id)
+    return list(record.failures)
+
+
+async def get_failure(failure_id: str) -> Failure | None:
+    """Retrieve a single failure evidence record by its failure ID."""
+    fail = await storage.failures.get(failure_id)
+    if fail:
+        return fail
+    async with _lock:
+        for rec in _sessions.values():
+            for f in rec.failures:
+                if f.id == failure_id:
+                    return f
+    return None
+
+
+async def get_session_events(session_id: str) -> list[LogEvent]:
+    """Retrieve all observability log events for a given session."""
+    record = await get_session(session_id)
+    return list(record.logs)
+
+
+async def replay_test_case(test_id: str) -> dict[str, Any]:
+    """Replay a specific test case deterministically and return reproduction metrics."""
+    target_test: TestCase | None = None
+    target_record: SessionRecord | None = None
+
+    async with _lock:
+        for rec in _sessions.values():
+            for t in rec.tests:
+                if t.id == test_id:
+                    target_test = t
+                    target_record = rec
+                    break
+            if target_test:
+                break
+
+    if not target_test or not target_record:
+        raise SessionNotFoundError(f"Test case '{test_id}' not found.")
+
+    agent, spec = spec_for_agent(
+        target_record.config.target_agent.id,
+        target_record.config.target_agent.name,
+        target_record.config.target_agent.endpoint,
+    )
+
+    attacker_messages = [t.content for t in target_test.conversation if t.role == TurnRole.ADVERSIGHT]
+    if not attacker_messages:
+        attacker_messages = [target_test.attack]
+
+    case = ReplayCase(
+        id=f"replay_{target_test.id}",
+        test_id=target_test.id,
+        strategy=target_test.strategy.value,
+        target_name=spec.name,
+        attacker_messages=attacker_messages,
+        expected_failure_type=target_test.failure_type or "policy_violation",
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+    evaluator = Evaluator()
+    replay_result = await asyncio.to_thread(replay, case, agent, spec, evaluator, attempts=1)
+    return replay_result.model_dump(by_alias=True)
+
+
+def get_available_agents() -> list[dict[str, Any]]:
+    """Return catalog of available testable target agents."""
+    return get_agent_catalog()

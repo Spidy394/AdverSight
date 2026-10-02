@@ -11,11 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
 from app.model.event import TestEventType
-from app.model.session import SessionCreate, SessionDashboard
+from app.model.session import Failure, LogEvent, SessionCreate, SessionDashboard, TestCase
 from app.services import session_service as service
 from app.services.event_broker import event_broker
 
-router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
+router = APIRouter(tags=["sessions"])
 
 
 def _not_found(exc: service.SessionNotFoundError) -> HTTPException:
@@ -72,6 +72,33 @@ async def stop_session(session_id: str) -> SessionDashboard:
     except service.SessionStateError as exc:
         raise _conflict(exc) from exc
     return service.build_dashboard(record)
+
+
+@router.get("/{session_id}/tests", response_model=list[TestCase])
+async def get_session_tests(session_id: str) -> list[TestCase]:
+    """Retrieve all test cases for a given session."""
+    try:
+        return await service.get_session_tests(session_id)
+    except service.SessionNotFoundError as exc:
+        raise _not_found(exc) from exc
+
+
+@router.get("/{session_id}/failures", response_model=list[Failure])
+async def get_session_failures(session_id: str) -> list[Failure]:
+    """Retrieve all failure evidence records for a given session."""
+    try:
+        return await service.get_session_failures(session_id)
+    except service.SessionNotFoundError as exc:
+        raise _not_found(exc) from exc
+
+
+@router.get("/{session_id}/events", response_model=list[LogEvent])
+async def get_session_events(session_id: str) -> list[LogEvent]:
+    """Retrieve all observability log events for a given session."""
+    try:
+        return await service.get_session_events(session_id)
+    except service.SessionNotFoundError as exc:
+        raise _not_found(exc) from exc
 
 
 async def _get_valid_session(session_id: str) -> service.SessionRecord:
