@@ -32,10 +32,10 @@ CREDENTIAL_REGEXES = [
     # Basic auth: "Basic <base64>"
     (re.compile(r"(basic\s+)[A-Za-z0-9+/=]{8,}", re.IGNORECASE), r"\1[REDACTED_AUTH]"),
     # Common API key formats: sk-..., AIza..., etc.
-    (re.compile(r"\b(?:sk|AIza)[A-Za-z0-9_\-]{16,}\b", re.IGNORECASE), "[REDACTED_API_KEY]"),
-    # Standard password/secret assignment patterns in text: password=..., api_key=...
+    (re.compile(r"\b(?:sk|AIza)[A-Za-z0-9_\-]{10,}\b", re.IGNORECASE), "[REDACTED_API_KEY]"),
+    # Standard password/secret assignment patterns in text: password=..., api_key=..., key=...
     (
-        re.compile(r"(password|api_key|secret|token)\s*[:=]\s*['\"]?[A-Za-z0-9_\-\.!@#$%^&*]{6,}['\"]?", re.IGNORECASE),
+        re.compile(r"(password|api_key|apikey|secret|token|key)\s*[:=]\s*['\"]?[A-Za-z0-9_\-\.!@#$%^&*]{6,}['\"]?", re.IGNORECASE),
         r"\1=[REDACTED]",
     ),
 ]
