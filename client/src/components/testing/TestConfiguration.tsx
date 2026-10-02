@@ -73,7 +73,6 @@ export function TestConfiguration({
   onSpeedChange,
   onStart,
   onPause,
-  onResume,
   onReset,
   onConfigChange,
 }: TestConfigurationProps) {
