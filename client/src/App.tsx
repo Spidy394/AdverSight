@@ -1,8 +1,7 @@
+import Dashboard from "@/pages/Dashboard";
 
 const App = () => {
-  return (
-    <div className="flex items-center justify-center h-screen bg-amber-400">Yo</div>
-  )
-}
+  return <Dashboard />;
+};
 
-export default App
+export default App;

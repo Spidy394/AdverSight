@@ -83,48 +83,96 @@
     --sidebar-ring: oklch(0.708 0 0);
 }
 
+/* ── AdverSight dark-tech theme (always-dark dashboard) ── */
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --background:        oklch(0.09 0.006 240);
+    --foreground:        oklch(0.93 0.01 220);
+    --card:              oklch(0.13 0.008 240);
+    --card-foreground:   oklch(0.93 0.01 220);
+    --popover:           oklch(0.13 0.008 240);
+    --popover-foreground: oklch(0.93 0.01 220);
+    --primary:           oklch(0.72 0.16 200);
+    --primary-foreground: oklch(0.09 0.006 240);
+    --secondary:         oklch(0.18 0.008 240);
+    --secondary-foreground: oklch(0.93 0.01 220);
+    --muted:             oklch(0.17 0.007 240);
+    --muted-foreground:  oklch(0.55 0.02 220);
+    --accent:            oklch(0.20 0.010 240);
+    --accent-foreground: oklch(0.93 0.01 220);
+    --destructive:       oklch(0.62 0.22 25);
+    --border:            oklch(1 0 0 / 8%);
+    --input:             oklch(1 0 0 / 10%);
+    --ring:              oklch(0.72 0.16 200 / 50%);
+    --chart-1:           oklch(0.72 0.16 200);
+    --chart-2:           oklch(0.65 0.18 145);
+    --chart-3:           oklch(0.62 0.22 25);
+    --chart-4:           oklch(0.70 0.14 60);
+    --chart-5:           oklch(0.60 0.20 300);
+    --sidebar:           oklch(0.11 0.007 240);
+    --sidebar-foreground: oklch(0.93 0.01 220);
+    --sidebar-primary:   oklch(0.72 0.16 200);
+    --sidebar-primary-foreground: oklch(0.09 0.006 240);
+    --sidebar-accent:    oklch(0.17 0.008 240);
+    --sidebar-accent-foreground: oklch(0.93 0.01 220);
+    --sidebar-border:    oklch(1 0 0 / 8%);
+    --sidebar-ring:      oklch(0.72 0.16 200 / 50%);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
+  }
   body {
     @apply bg-background text-foreground;
-    }
+  }
   html {
     @apply font-sans;
-    }
+  }
+}
+
+/* ── AdverSight custom properties (non-Tailwind, referenced via inline style / CSS vars) ── */
+:root {
+    --adv-pass:       oklch(0.55 0.17 145);
+    --adv-pass-bg:    oklch(0.55 0.17 145 / 12%);
+    --adv-pass-border: oklch(0.55 0.17 145 / 28%);
+    --adv-fail:       oklch(0.65 0.22 25);
+    --adv-fail-bg:    oklch(0.65 0.22 25 / 12%);
+    --adv-fail-border: oklch(0.65 0.22 25 / 28%);
+    --adv-running:    oklch(0.75 0.14 60);
+    --adv-running-bg: oklch(0.75 0.14 60 / 12%);
+    --adv-pending:    oklch(0.45 0.01 240);
+    --adv-pending-bg: oklch(0.45 0.01 240 / 12%);
+    --adv-cyan:       oklch(0.72 0.16 200);
+    --adv-cyan-bg:    oklch(0.72 0.16 200 / 10%);
+    --adv-panel:      oklch(0.13 0.008 240);
+    --adv-surface:    oklch(0.17 0.008 240);
+    --adv-border:     oklch(1 0 0 / 8%);
+}
+
+/* Pulsing animation for live indicators (CSS only, ambient) */
+@keyframes adv-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+@keyframes adv-blink {
+  0%, 100% { opacity: 1; }
+  49%       { opacity: 1; }
+  50%       { opacity: 0; }
+  99%       { opacity: 0; }
+}
+
+@keyframes adv-scan {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+.adv-pulse   { animation: adv-pulse 1.8s ease-in-out infinite; }
+.adv-blink   { animation: adv-blink 1.2s step-end infinite; }
+
+/* Monospace with tabular nums for the log panel */
+.adv-mono {
+  font-family: 'Geist Variable', 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
