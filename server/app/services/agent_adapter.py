@@ -362,7 +362,14 @@ def spec_for_agent(target_id: str, name: str, endpoint: str) -> tuple[TargetAgen
 
     # External HTTP webhook
     if (tend.startswith("http://") or tend.startswith("https://")) and "localhost:8000" not in tend:
-        return HttpAgentAdapter(endpoint=endpoint), flight_spec()
+        spec = flight_spec()
+        if "support" in tid or "support" in tname:
+            spec = support_spec()
+        elif "shop" in tid or "shop" in tname:
+            spec = shopping_spec()
+        elif "bank" in tid or "bank" in tname:
+            spec = banking_spec()
+        return HttpAgentAdapter(endpoint=endpoint), spec
 
     # Support domain
     if "support" in tid or "support" in tname:
@@ -390,6 +397,15 @@ def spec_for_agent(target_id: str, name: str, endpoint: str) -> tuple[TargetAgen
 def get_agent_catalog() -> list[dict[str, Any]]:
     """Return available pre-configured testable agents for selection."""
     return [
+        {
+            "id": "agent_gemini_flight_real",
+            "name": "Gemini Flight Agent (Real Agent - :9000)",
+            "domain": "Flight Booking",
+            "agentType": "tool_calling",
+            "endpoint": "http://localhost:9000/chat",
+            "connected": True,
+            "description": "Live external agent powered by Google Gemini API with real tool calling.",
+        },
         {
             "id": "agent_flight_vulnerable",
             "name": "Flight Booking Agent (Vulnerable)",
@@ -436,3 +452,4 @@ def get_agent_catalog() -> list[dict[str, Any]]:
             "description": "Tests wire transfer authorization and account balance disclosure boundaries.",
         },
     ]
+

@@ -1,5 +1,6 @@
 import { type DashboardStatus } from "@/types/testing";
 import { cn } from "@/lib/utils";
+import { Link } from "react-router-dom";
 import { Radio, RotateCcw, Download, Cpu } from "lucide-react";
 
 interface HeaderProps {
@@ -48,26 +49,32 @@ export function Header({
     <header className="border-b border-border/50 bg-[#0B0F19] px-4 lg:px-6 py-2.5 flex items-center justify-between sticky top-0 z-40 backdrop-blur-md">
       {/* Left — Brand & Positioning */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/30 shadow-[0_0_10px_rgba(34,211,238,0.2)] overflow-hidden">
-          <img
-            src="/logo.png"
-            alt="AdverSight logo"
-            className="w-12 h-12 object-contain"
-          />
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm font-bold tracking-tight text-zinc-100 flex items-center gap-1.5">
-              AdverSight
-              <span className="text-[9px] font-mono font-medium px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                v1.0-RC
-              </span>
-            </h1>
+        <Link
+          to="/"
+          className="flex items-center gap-3 group"
+          title="Return to AdverSight Home"
+        >
+          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/30 shadow-[0_0_10px_rgba(34,211,238,0.2)] overflow-hidden group-hover:scale-105 transition-transform">
+            <img
+              src="/logo.png"
+              alt="AdverSight logo"
+              className="w-12 h-12 object-contain"
+            />
           </div>
-          <p className="text-[10.5px] text-zinc-400 tracking-wide font-normal">
-            Autonomous Adversarial Testing for AI Agents
-          </p>
-        </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-bold tracking-tight text-zinc-100 flex items-center gap-1.5 group-hover:text-cyan-300 transition-colors">
+                AdverSight
+                <span className="text-[9px] font-mono font-medium px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  v1.0-RC
+                </span>
+              </h1>
+            </div>
+            <p className="text-[10.5px] text-zinc-400 tracking-wide font-normal flex items-center gap-1">
+              <span>Autonomous Adversarial Testing for AI Agents</span>
+            </p>
+          </div>
+        </Link>
       </div>
 
       {/* Center — Target & Session Telemetry */}
