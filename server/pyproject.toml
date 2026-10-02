@@ -17,13 +17,17 @@ dependencies = [
 package = true
 
 [tool.uv.build-backend]
+# The package lives at ./app, not ./src/app, so the module root is the project
+# root. With "src" the build fails with "Expected a Python module at src/app".
 module-name = "app"
 module-root = ""
+module-root = "."
 
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
     "pytest>=8",
+    "pytest>=8.4.2",
 ]
 
 [build-system]

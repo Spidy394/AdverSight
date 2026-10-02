@@ -26,7 +26,7 @@ export function LiveConversation({
 }: LiveConversationProps) {
   if (!activeTest) {
     return (
-      <div className="rounded-lg border border-border/60 bg-[#0B0F17] p-6 flex flex-col items-center justify-center min-h-[360px] text-center shadow-md">
+      <div className="rounded-lg border border-border/60 bg-[#0B0F17] p-6 flex flex-col items-center justify-center min-h-90 text-center shadow-md">
         <div className="w-10 h-10 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-3 animate-pulse">
           <Terminal size={18} />
         </div>
@@ -125,7 +125,7 @@ export function LiveConversation({
       </div>
 
       {/* Main Conversation Stream */}
-      <div className="p-3.5 flex flex-col gap-3 min-h-[220px] max-h-[380px] overflow-y-auto bg-[#080B12]">
+      <div className="p-3.5 flex flex-col gap-3 min-h-55 max-h-95 overflow-y-auto bg-[#080B12]">
         {conversation.map((turn, idx) => (
           <MessageBubble key={idx} turn={turn} />
         ))}

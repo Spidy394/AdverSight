@@ -4,85 +4,95 @@ import {
   type Failure,
   type TestCase,
   type TargetAgent,
-  type TestSessionConfig,
   type LogEvent,
+  type AttackCategory,
 } from "@/types/testing";
 import {
   mockDashboardData,
+  MOCK_TARGET_AGENTS,
   SIMULATED_TEST_RUNS,
 } from "@/data/mockData";
 
-// Components
-import { Header } from "@/components/layout/Header";
-import { WorkflowPipeline } from "@/components/layout/WorkflowPipeline";
-import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { AgentConfig } from "@/components/agent/AgentConfig";
-import { TestConfiguration } from "@/components/testing/TestConfiguration";
-import { TestProgressBar } from "@/components/testing/TestProgress";
-import { TestControls } from "@/components/testing/TestControls";
-import { LiveConversation } from "@/components/conversation/LiveConversation";
-import { TestResult } from "@/components/results/TestResult";
-import { FailureCard } from "@/components/results/FailureCard";
 import { FailureDetails } from "@/components/results/FailureDetails";
-import { ObservabilityLogs } from "@/components/logs/ObservabilityLogs";
 
 import {
-  AlertOctagon,
+  ArrowDownToLine,
+  ArrowRight,
+  Bot,
   CheckCircle2,
-  XCircle,
-  Clock,
-  Layers,
-  ChevronDown,
-  ChevronUp,
-  ShieldCheck,
+  CircleDot,
+  Clock3,
+  LoaderCircle,
+  Play,
+  RotateCcw,
   Search,
+  Shield,
+  ShieldCheck,
+  Square,
+  Wifi,
+  WifiOff,
+  XCircle,
 } from "lucide-react";
 
+const ATTACK_GOALS: { id: AttackCategory; label: string; description: string }[] = [
+  { id: "unauthorized_action", label: "Unauthorized action", description: "Test whether the agent acts without valid confirmation." },
+  { id: "goal_hijacking", label: "Goal hijacking", description: "Redirect the agent away from its intended task." },
+  { id: "identity_confusion", label: "Identity confusion", description: "Test role and authority claims supplied in chat." },
+  { id: "policy_violation", label: "Policy violation", description: "Probe business and safety policy boundaries." },
+  { id: "context_manipulation", label: "Context manipulation", description: "Introduce false history or altered instructions." },
+  { id: "tool_misuse", label: "Tool misuse", description: "Probe tool permissions, arguments, and data access." },
+  { id: "information_extraction", label: "Information extraction", description: "Test for prompt, schema, or sensitive-data disclosure." },
+];
+
+function createInitialData(): DashboardData {
+  return {
+    ...mockDashboardData,
+    status: "idle",
+    progress: { ...mockDashboardData.progress, running: 0 },
+    tests: mockDashboardData.tests.map((test) =>
+      test.status === "running" ? { ...test, status: "pending" } : test
+    ),
+  };
+}
+
 export default function Dashboard() {
-  const [data, setData] = useState<DashboardData>(mockDashboardData);
+  const [data, setData] = useState<DashboardData>(createInitialData);
   const [selectedFailure, setSelectedFailure] = useState<Failure | null>(null);
-  const [activeTestId, setActiveTestId] = useState<string>("test_007");
-  const [testFilter, setTestFilter] = useState<"all" | "failed" | "passed" | "pending">("all");
-  const [testSearch, setTestSearch] = useState<string>("");
-  const [showAllTests, setShowAllTests] = useState(false);
+  const [activeTestId, setActiveTestId] = useState<string>("test_015");
+  const [selectedGoal, setSelectedGoal] = useState<AttackCategory>("unauthorized_action");
+  const [failureSearch, setFailureSearch] = useState("");
   const [simSpeed, setSimSpeed] = useState<number>(1);
-  const [pipelineStep, setPipelineStep] = useState<number>(4);
 
   // Simulation timer ref
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Active test memo
   const activeTest = useMemo<TestCase | null>(() => {
     return data.tests.find((t) => t.id === activeTestId) ?? data.tests[0] ?? null;
   }, [data.tests, activeTestId]);
 
-  // Filtered test list
-  const filteredTests = useMemo(() => {
-    return data.tests.filter((test) => {
-      // Status filter
-      if (testFilter === "failed" && test.status !== "failed") return false;
-      if (testFilter === "passed" && test.status !== "passed") return false;
-      if (testFilter === "pending" && test.status !== "pending" && test.status !== "running") return false;
-
-      // Text search
-      if (testSearch.trim()) {
-        const q = testSearch.toLowerCase();
-        const matchesNum = `#${test.testNumber}`.includes(q);
-        const matchesStrat = test.strategy.toLowerCase().includes(q);
-        const matchesAttack = test.attack.toLowerCase().includes(q);
-        return matchesNum || matchesStrat || matchesAttack;
-      }
-      return true;
-    });
-  }, [data.tests, testFilter, testSearch]);
-
-  const visibleTests = showAllTests ? filteredTests : filteredTests.slice(0, 8);
+  const selectedGoalDetails = ATTACK_GOALS.find((goal) => goal.id === selectedGoal) ?? ATTACK_GOALS[0];
+  const queuedGoalCount = data.tests.filter(
+    (test) => test.strategy === selectedGoal && (test.status === "pending" || test.status === "running")
+  ).length;
+  const filteredFailures = useMemo(() => {
+    const query = failureSearch.trim().toLowerCase();
+    if (!query) return data.failures;
+    return data.failures.filter((failure) =>
+      [failure.type, failure.strategy, failure.description, failure.severity, failure.testId]
+        .some((value) => value.toLowerCase().includes(query))
+    );
+  }, [data.failures, failureSearch]);
 
   // Start / Resume Simulation
   const handleStart = () => {
     if (data.status === "testing") return;
+    const nextTest = data.tests.find(
+      (test) => test.strategy === selectedGoal && (test.status === "pending" || test.status === "running")
+    );
+    if (!nextTest || !data.config.targetAgent.connected) return;
+    setActiveTestId(nextTest.id);
     setData((prev) => ({ ...prev, status: "testing" }));
-    setPipelineStep(2);
   };
 
   const handlePause = () => {
@@ -93,34 +103,17 @@ export default function Dashboard() {
     setData((prev) => ({ ...prev, status: "idle" }));
   };
 
-  const handleResume = () => {
-    setData((prev) => ({ ...prev, status: "testing" }));
-  };
-
   // Reset state to initial demo mock
   const handleReset = () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    setData(mockDashboardData);
-    setActiveTestId("test_007");
-    setPipelineStep(4);
-  };
-
-  // Step single next pending test
-  const handleStepNext = () => {
-    const nextPending = data.tests.find((t) => t.status === "pending" || t.status === "running");
-    if (!nextPending) return;
-    executeSingleTestStep(nextPending.id);
-  };
-
-  // Focus next failure
-  const handleJumpFailure = () => {
-    const firstFail = data.tests.find((t) => t.status === "failed");
-    if (firstFail) {
-      setActiveTestId(firstFail.id);
-    }
+    const initialData = createInitialData();
+    setData(initialData);
+    setActiveTestId("test_015");
+    setSelectedGoal("unauthorized_action");
+    setSelectedFailure(null);
   };
 
   // Change Target Agent
@@ -142,14 +135,6 @@ export default function Dashboard() {
       message: `Target agent switched to ${newAgent.name} (${newAgent.endpoint})`,
     };
     setData((prev) => ({ ...prev, logs: [...prev.logs, newLog] }));
-  };
-
-  // Change Test Config
-  const handleConfigChange = (newConfig: TestSessionConfig) => {
-    setData((prev) => ({
-      ...prev,
-      config: newConfig,
-    }));
   };
 
   // Execute a single test step in state
@@ -194,7 +179,7 @@ export default function Dashboard() {
       const running = updatedTests.filter((t) => t.status === "running").length;
 
       // Add new failure if failed
-      let newFailures = [...prev.failures];
+      const newFailures = [...prev.failures];
       if (sim && sim.status === "failed" && !newFailures.some((f) => f.testId === testId)) {
         const foundTest = updatedTests.find((t) => t.id === testId);
         newFailures.push({
@@ -307,13 +292,11 @@ export default function Dashboard() {
     timerRef.current = setInterval(() => {
       // Find the next test to run
       const nextPendingIndex = data.tests.findIndex(
-        (t) => t.status === "pending" || t.status === "running"
+        (test) => test.strategy === selectedGoal && (test.status === "pending" || test.status === "running")
       );
 
       if (nextPendingIndex === -1) {
-        // All tests completed!
         setData((prev) => ({ ...prev, status: "completed" }));
-        setPipelineStep(6);
         if (timerRef.current) clearInterval(timerRef.current);
         return;
       }
@@ -333,18 +316,29 @@ export default function Dashboard() {
           },
         }));
         setActiveTestId(targetTest.id);
-        setPipelineStep(3);
       } else {
         // Resolve running test
         executeSingleTestStep(targetTest.id);
-        setPipelineStep(5);
       }
     }, intervalTime);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [data.status, data.tests, simSpeed]);
+  }, [data.status, data.tests, simSpeed, selectedGoal]);
+
+  const handleGoalSelect = (goal: AttackCategory) => {
+    if (data.status === "testing") return;
+    setSelectedGoal(goal);
+    setData((prev) => ({
+      ...prev,
+      config: { ...prev.config, attackCategories: [goal] },
+    }));
+    const nextTest = data.tests.find(
+      (test) => test.strategy === goal && (test.status === "pending" || test.status === "running")
+    );
+    setActiveTestId(nextTest?.id ?? "");
+  };
 
   // Export full audit report as JSON
   const handleExportAudit = () => {
@@ -377,313 +371,264 @@ export default function Dashboard() {
     URL.revokeObjectURL(url);
   };
 
+  const isRunning = data.status === "testing";
+  const isPaused = !isRunning && activeTest?.status === "running";
+  const currentGoal = selectedGoalDetails;
+  const verdict = activeTest?.status === "failed" ? "failed" : activeTest?.status === "passed" ? "passed" : null;
+  const activeFailure = activeTest ? data.failures.find((failure) => failure.testId === activeTest.id) : null;
+  const turnCount = Math.ceil((activeTest?.conversation.length ?? 0) / 2);
+
   return (
-    <DashboardLayout>
-      {/* Top Header */}
-      <Header
-        status={data.status}
-        targetName={data.config.targetAgent.name}
-        sessionId={data.sessionId}
-        onReset={handleReset}
-        onExportReport={handleExportAudit}
-      />
-
-      {/* Visual Workflow Pipeline Banner: TARGET AGENT -> PROBE -> RESPONSE -> OBSERVATION -> PASS/FAIL -> EVIDENCE */}
-      <WorkflowPipeline status={data.status} currentStep={pipelineStep} />
-
-      {/* Main Workspace Container */}
-      <main className="flex-1 p-3 sm:p-4 lg:p-5 flex flex-col gap-4 max-w-[1800px] w-full mx-auto">
-        {/* Top Mission Status Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#0A0D15] border border-border/40 text-xs font-mono">
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-500 uppercase tracking-widest text-[9.5px]">
-              EVAL CONSOLE:
-            </span>
-            <span className="text-zinc-200 font-semibold font-sans">
-              {data.config.targetAgent.name}
-            </span>
-            <span className="text-zinc-600 hidden sm:inline">|</span>
-            <span className="text-zinc-400 hidden sm:inline">
-              Mode: <span className="text-cyan-400 capitalize">{data.config.testMode.replace(/_/g, " ")}</span>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {data.failures.length > 0 && (
-              <button
-                onClick={handleJumpFailure}
-                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 transition-colors"
-              >
-                <AlertOctagon size={11} className="text-red-400" />
-                <span className="font-bold">{data.failures.length} Vulnerabilities Detected</span>
-              </button>
-            )}
-            <div className="flex items-center gap-1.5 text-zinc-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-              <span>Adversarial Testing Engine Active</span>
+    <div className="min-h-screen bg-[#f3f5f2] text-[#202a2a]">
+      <header className="sticky top-0 z-30 border-b border-[#dfe5df] bg-white/95 backdrop-blur-sm">
+        <div className="mx-auto flex h-17 max-w-360 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-[#e7efeb] text-[#28614f]">
+              <Shield size={19} strokeWidth={1.8} />
             </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[15px] font-semibold tracking-normal">AdverSight</span>
+                <span className="hidden border-l border-[#dfe5df] pl-2 text-xs text-[#71807a] sm:inline">Security evaluation</span>
+              </div>
+              <p className="truncate text-[11px] text-[#78847f]">Agent attack workspace</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <span className={`inline-flex items-center gap-2 rounded-sm px-2.5 py-1.5 text-xs font-medium ${isRunning ? "bg-[#fff3df] text-[#94601b]" : data.status === "completed" ? "bg-[#e6f1e9] text-[#34714b]" : "bg-[#eef1ed] text-[#56635d]"}`}>
+              <span className={`size-1.5 rounded-full ${isRunning ? "bg-[#c7872d]" : data.status === "completed" ? "bg-[#42825a]" : "bg-[#8b9790]"}`} />
+              {isRunning ? "Attack running" : isPaused ? "Attack paused" : data.status === "completed" ? "Attack complete" : "Ready to test"}
+            </span>
+            <button onClick={handleExportAudit} title="Export audit report" className="inline-flex size-9 items-center justify-center rounded-md border border-[#dfe5df] text-[#586660] transition hover:bg-[#f3f6f3] hover:text-[#254f40] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#417b63]">
+              <ArrowDownToLine size={16} />
+              <span className="sr-only">Export audit report</span>
+            </button>
+            <button onClick={handleReset} title="Reset workspace" className="hidden size-9 items-center justify-center rounded-md border border-[#dfe5df] text-[#586660] transition hover:bg-[#f3f6f3] hover:text-[#254f40] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#417b63] sm:inline-flex">
+              <RotateCcw size={15} />
+              <span className="sr-only">Reset workspace</span>
+            </button>
           </div>
         </div>
+      </header>
 
-        {/* Core 3-Column Technical Workspace */}
-        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr_310px] xl:grid-cols-[320px_1fr_340px] gap-4 items-start">
-          {/* ======================================================== */}
-          {/* LEFT COLUMN: Target Agent & Test Configuration           */}
-          {/* ======================================================== */}
-          <div className="flex flex-col gap-4">
-            {/* Target Agent Panel */}
-            <AgentConfig
-              currentAgent={data.config.targetAgent}
-              onAgentChange={handleAgentChange}
-              disabled={data.status === "testing"}
-            />
-
-            {/* Test Configuration Panel */}
-            <TestConfiguration
-              config={data.config}
-              status={data.status}
-              speed={simSpeed}
-              onSpeedChange={setSimSpeed}
-              onStart={handleStart}
-              onPause={handlePause}
-              onResume={handleResume}
-              onReset={handleReset}
-              onConfigChange={handleConfigChange}
-            />
+      <main className="mx-auto flex w-full max-w-360 flex-col gap-7 px-4 pb-12 pt-7 sm:px-6 lg:px-8">
+        <section className="flex flex-col justify-between gap-5 border-b border-[#dfe5df] pb-5 sm:flex-row sm:items-end">
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#567565]">Evaluation / {data.sessionId}</p>
+            <h1 className="text-[26px] font-semibold leading-tight text-[#202a2a] sm:text-[30px]">Attack workspace</h1>
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-[#65736d]">Choose an attack goal, run it against your agent, then inspect and reproduce any security failures.</p>
           </div>
-
-          {/* ======================================================== */}
-          {/* CENTER COLUMN: Progress, Live Session & Test Matrix      */}
-          {/* ======================================================== */}
-          <div className="flex flex-col gap-4 min-w-0">
-            {/* Mission Progress Bar */}
-            <TestProgressBar
-              progress={data.progress}
-              isTesting={data.status === "testing"}
-            />
-
-            {/* Quick Testing Controls */}
-            <TestControls
-              status={data.status}
-              onStart={handleStart}
-              onPause={handlePause}
-              onStepNext={handleStepNext}
-              onReset={handleReset}
-              onJumpFailure={handleJumpFailure}
-              hasFailures={data.failures.length > 0}
-            />
-
-            {/* Live Test Session Conversation & Tool Interceptor */}
-            <LiveConversation
-              activeTest={activeTest}
-              onViewEvidence={(testId) => {
-                const f = data.failures.find((fail) => fail.testId === testId);
-                if (f) setSelectedFailure(f);
+          <label className="flex w-full flex-col gap-1.5 text-xs font-medium text-[#53615a] sm:w-65">
+            Target agent
+            <select
+              value={data.config.targetAgent.id}
+              disabled={isRunning}
+              onChange={(event) => {
+                const agent = MOCK_TARGET_AGENTS.find((candidate) => candidate.id === event.target.value);
+                if (agent) handleAgentChange(agent);
               }}
-              onReplayTest={(test) => {
-                const f = data.failures.find((fail) => fail.testId === test.id);
-                if (f) {
-                  setSelectedFailure(f);
-                } else {
-                  // Replay non-failure test
-                  setActiveTestId(test.id);
-                }
-              }}
-            />
+              className="h-10 w-full rounded-md border border-[#d5ddd6] bg-white px-3 text-sm text-[#27332e] shadow-sm outline-none transition focus:border-[#52816b] focus:ring-2 focus:ring-[#52816b]/15 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {MOCK_TARGET_AGENTS.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+            </select>
+          </label>
+        </section>
 
-            {/* Test Suite Matrix / Inspector List */}
-            <div className="rounded-lg border border-border/60 bg-[#0B0F17] p-3.5 flex flex-col gap-2.5 shadow-md">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/30 pb-2">
-                <div className="flex items-center gap-2">
-                  <Layers size={13} className="text-cyan-400" />
-                  <span className="text-[10px] uppercase font-mono font-semibold tracking-wider text-zinc-300">
-                    Test Suite Matrix ({data.tests.length})
-                  </span>
-                </div>
+        <nav aria-label="Attack workflow" className="grid grid-cols-3 border-b border-[#dfe5df]">
+          {[
+            { number: "01", label: "Choose goal", step: 1 },
+            { number: "02", label: "Run attack", step: 2 },
+            { number: "03", label: "Inspect outcome", step: 3 },
+          ].map((item, index) => {
+            const activeStep = isRunning || isPaused ? 2 : data.status === "completed" ? 3 : 1;
+            const complete = item.step < activeStep || (item.step === 1 && data.status !== "idle");
+            return (
+              <div key={item.number} className={`flex items-center gap-2.5 border-b-2 px-1 pb-3 text-sm ${item.step === activeStep ? "border-[#37735a] font-semibold text-[#2c674f]" : complete ? "border-transparent text-[#65736d]" : "border-transparent text-[#9aa49e]"}`}>
+                <span className={`flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${complete ? "bg-[#e4eee8] text-[#34714f]" : item.step === activeStep ? "bg-[#dcebe2] text-[#2c674f]" : "bg-[#e9ede9] text-[#849089]"}`}>
+                  {complete ? <CheckCircle2 size={13} /> : item.number}
+                </span>
+                <span>{item.label}</span>
+                {index < 2 && <ArrowRight size={13} className="ml-auto hidden text-[#a2aca6] sm:block" />}
+              </div>
+            );
+          })}
+        </nav>
 
-                {/* Filter Tabs */}
-                <div className="flex items-center gap-1 bg-zinc-950 p-0.5 rounded border border-border/40 text-[10px] font-mono">
-                  {(
-                    [
-                      { id: "all", label: "All" },
-                      { id: "failed", label: `Fail (${data.progress.failed})` },
-                      { id: "passed", label: `Pass (${data.progress.passed})` },
-                      { id: "pending", label: "Queued" },
-                    ] as const
-                  ).map((f) => (
+        {!data.config.targetAgent.connected && (
+          <div role="alert" className="flex items-start gap-3 border border-[#e7c9ad] bg-[#fff8ef] px-4 py-3 text-sm text-[#80562f]">
+            <WifiOff size={17} className="mt-0.5 shrink-0" />
+            <div><p className="font-semibold">Target endpoint is offline</p><p className="mt-0.5 text-xs">Reconnect the agent before starting an attack. The selected endpoint is {data.config.targetAgent.endpoint}.</p></div>
+          </div>
+        )}
+
+        <section className="grid min-w-0 gap-5 xl:grid-cols-[330px_minmax(0,1fr)]">
+          <aside className="flex min-w-0 flex-col gap-4">
+            <div className="overflow-hidden rounded-md border border-[#dfe5df] bg-white">
+              <div className="border-b border-[#e7ebe7] px-4 py-3.5">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-[#718078]">01 / Attack goal</p>
+                <h2 className="mt-1 text-[15px] font-semibold">Select a strategy</h2>
+              </div>
+              <div className="divide-y divide-[#edf0ed]">
+                {ATTACK_GOALS.map((goal) => {
+                  const selected = selectedGoal === goal.id;
+                  const queued = data.tests.filter((test) => test.strategy === goal.id && (test.status === "pending" || test.status === "running")).length;
+                  return (
                     <button
-                      key={f.id}
-                      onClick={() => setTestFilter(f.id)}
-                      className={`px-2 py-0.5 rounded transition-colors ${
-                        testFilter === f.id
-                          ? "bg-zinc-800 text-cyan-300 font-semibold"
-                          : "text-zinc-500 hover:text-zinc-300"
-                      }`}
+                      key={goal.id}
+                      type="button"
+                      aria-pressed={selected}
+                      disabled={isRunning}
+                      onClick={() => handleGoalSelect(goal.id)}
+                      className={`flex w-full items-start gap-3 px-4 py-3 text-left transition focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-[#417b63] disabled:cursor-not-allowed disabled:opacity-60 ${selected ? "bg-[#f0f6f1]" : "bg-white hover:bg-[#f8faf8]"}`}
                     >
-                      {f.label}
+                      <span className={`mt-0.5 flex size-4.5 shrink-0 items-center justify-center rounded-full border ${selected ? "border-[#3e795f] bg-[#3e795f] text-white" : "border-[#bdc8bf] bg-white text-transparent"}`}><CircleDot size={12} /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center justify-between gap-2 text-[13px] font-semibold text-[#2a3530]">
+                          {goal.label}
+                          <span className="font-mono text-[10px] font-medium tabular-nums text-[#88938c]">{queued} queued</span>
+                        </span>
+                        <span className="mt-1 block text-xs leading-[1.45] text-[#748078]">{goal.description}</span>
+                      </span>
                     </button>
-                  ))}
-                </div>
-
-                {/* Search */}
-                <div className="relative">
-                  <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-500" />
-                  <input
-                    type="text"
-                    placeholder="Search test..."
-                    value={testSearch}
-                    onChange={(e) => setTestSearch(e.target.value)}
-                    className="pl-5 pr-2 py-0.5 rounded bg-zinc-900 border border-border/40 text-[10.5px] font-mono text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500/40 w-28"
-                  />
-                </div>
+                  );
+                })}
               </div>
-
-              {/* Grid of Tests */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                {visibleTests.map((test) => (
-                  <div
-                    key={test.id}
-                    onClick={() => setActiveTestId(test.id)}
-                  >
-                    <TestResult
-                      test={test}
-                      isActive={test.id === activeTestId}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {filteredTests.length > 8 && (
-                <button
-                  onClick={() => setShowAllTests((v) => !v)}
-                  className="flex items-center justify-center gap-1 pt-1 text-[10.5px] font-mono text-zinc-500 hover:text-cyan-400 transition-colors w-full"
-                >
-                  {showAllTests ? (
-                    <>
-                      <ChevronUp size={12} />
-                      <span>Collapse Test Suite</span>
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown size={12} />
-                      <span>View All {filteredTests.length} Test Cases</span>
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* ======================================================== */}
-          {/* RIGHT COLUMN: Results Summary & Discovered Failures      */}
-          {/* ======================================================== */}
-          <div className="flex flex-col gap-4">
-            {/* High-Signal Metrics Card */}
-            <div className="rounded-lg border border-border/60 bg-[#0B0F17] p-3.5 flex flex-col gap-3 shadow-md">
-              <div className="flex items-center justify-between pb-1 border-b border-border/30">
-                <span className="text-[10px] uppercase font-mono font-semibold tracking-wider text-zinc-300">
-                  Adversarial Summary
-                </span>
-                <span className="text-[9.5px] font-mono text-zinc-500">
-                  {data.progress.completed}/{data.progress.total} Evaluated
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-2.5 rounded bg-zinc-900/60 border border-border/40 flex flex-col gap-0.5">
-                  <span className="text-[9px] uppercase font-mono text-zinc-400">
-                    Resisted (Pass)
+              <div className="border-t border-[#e7ebe7] bg-[#fafbf9] px-4 py-3">
+                <label className="flex items-center justify-between gap-3 text-xs text-[#6e7a73]">
+                  <span>Simulation speed</span>
+                  <span className="inline-flex rounded border border-[#dce3dc] bg-white p-0.5">
+                    {[1, 2, 4].map((speed) => <button key={speed} onClick={() => setSimSpeed(speed)} aria-pressed={simSpeed === speed} className={`min-w-9 rounded px-2 py-1 font-mono text-[11px] transition ${simSpeed === speed ? "bg-[#e7f0e9] font-semibold text-[#31664e]" : "text-[#77837b] hover:bg-[#f2f5f2]"}`}>{speed}x</button>)}
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 size={15} className="text-emerald-400" />
-                    <span className="text-xl font-bold font-mono text-emerald-400">
-                      {data.progress.passed}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded bg-red-950/20 border border-red-500/30 flex flex-col gap-0.5">
-                  <span className="text-[9px] uppercase font-mono text-red-300">
-                    Breached (Fail)
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <XCircle size={15} className="text-red-400" />
-                    <span className="text-xl font-bold font-mono text-red-400">
-                      {data.progress.failed}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-2 rounded bg-zinc-950 text-xs font-mono border border-border/40">
-                <span className="text-zinc-400">Pass Security Rate:</span>
-                <span className="text-cyan-400 font-bold">
-                  {data.progress.completed > 0
-                    ? Math.round((data.progress.passed / data.progress.completed) * 100)
-                    : 100}
-                  %
-                </span>
+                </label>
               </div>
             </div>
 
-            {/* Discovered Failures Section */}
-            <div className="flex flex-col gap-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <AlertOctagon size={13} className="text-red-400" />
-                  <span className="text-[10px] uppercase font-mono font-semibold tracking-wider text-zinc-300">
-                    Discovered Failures
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-red-950 text-red-400 border border-red-800/60 font-bold">
-                  {data.failures.length} FLAGGED
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                {data.failures.length === 0 ? (
-                  <div className="rounded-lg border border-border/50 bg-[#0B0F17] p-6 flex flex-col items-center justify-center text-center gap-1.5">
-                    <ShieldCheck size={24} className="text-emerald-400 opacity-60 mb-1" />
-                    <span className="text-xs font-mono font-semibold text-zinc-300">
-                      No Failures Detected Yet
-                    </span>
-                    <p className="text-[11px] text-zinc-500">
-                      The target agent has resisted all executed adversarial probes so far.
-                    </p>
+            <div className="rounded-md border border-[#dfe5df] bg-white px-4 py-3.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  {data.config.targetAgent.connected ? <Wifi size={16} className="shrink-0 text-[#4c8060]" /> : <WifiOff size={16} className="shrink-0 text-[#ad684c]" />}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{data.config.targetAgent.name}</p>
+                    <p className="truncate font-mono text-[10px] text-[#7b8780]">{data.config.targetAgent.endpoint}</p>
                   </div>
+                </div>
+                <span className={`shrink-0 text-[10px] font-semibold ${data.config.targetAgent.connected ? "text-[#477655]" : "text-[#ad684c]"}`}>{data.config.targetAgent.connected ? "Connected" : "Offline"}</span>
+              </div>
+            </div>
+          </aside>
+
+          <section className="flex min-w-0 flex-col overflow-hidden rounded-md border border-[#d9e1da] bg-white shadow-[0_1px_2px_rgba(25,42,32,0.04)]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e5eae5] px-4 py-4 sm:px-5">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-[#718078]">02 / Live attack</p>
+                <h2 className="mt-1 truncate text-base font-semibold text-[#27332e]">{currentGoal?.label ?? selectedGoalDetails.label}</h2>
+                <p className="mt-0.5 truncate text-xs text-[#748078]">{activeTest ? `Probe #${String(activeTest.testNumber).padStart(2, "0")} · ${activeTest.id}` : "Waiting for an attack to start"}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {isRunning ? (
+                  <>
+                    <span className="inline-flex items-center gap-1.5 rounded-sm bg-[#fff3df] px-2.5 py-1.5 text-xs font-medium text-[#94601b]"><LoaderCircle size={13} className="animate-spin" />Running</span>
+                    <button onClick={handlePause} className="inline-flex h-9 items-center gap-2 rounded-md border border-[#d6dfd7] bg-white px-3 text-xs font-semibold text-[#4c5a52] transition hover:bg-[#f6f8f5] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#417b63]"><Square size={12} fill="currentColor" />Stop</button>
+                  </>
+                ) : data.status === "completed" ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-sm bg-[#e6f1e9] px-2.5 py-1.5 text-xs font-medium text-[#34714b]"><CheckCircle2 size={14} />Complete</span>
                 ) : (
-                  data.failures.map((failure) => (
-                    <FailureCard
-                      key={failure.id}
-                      failure={failure}
-                      onViewEvidence={(f) => setSelectedFailure(f)}
-                      onReplay={(f) => {
-                        setSelectedFailure(f);
-                      }}
-                    />
-                  ))
+                  <button onClick={handleStart} disabled={!data.config.targetAgent.connected || queuedGoalCount === 0} className="inline-flex h-10 items-center gap-2 rounded-md bg-[#326a51] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#285941] active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#326a51] disabled:cursor-not-allowed disabled:bg-[#a5b6a9]"><Play size={14} fill="currentColor" />{isPaused ? "Resume attack" : "Start attack"}</button>
                 )}
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* ======================================================== */}
-        {/* BOTTOM SECTION: Full-Width Real-Time Observability Logs */}
-        {/* ======================================================== */}
-        <div className="w-full">
-          <ObservabilityLogs
-            logs={data.logs}
-            onSelectTest={(testId) => setActiveTestId(testId)}
-          />
-        </div>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[#edf0ed] bg-[#fafbf9] px-4 py-2.5 text-xs sm:px-5">
+              <span className="flex items-center gap-2 text-[#637169]"><span className={`size-1.5 rounded-full ${isRunning ? "bg-[#c7872d]" : "bg-[#89958d]"}`} />{isRunning ? "Streaming response" : isPaused ? "Paused · ready to resume" : data.status === "completed" ? "Probe execution finished" : queuedGoalCount === 0 ? "No queued probes for this goal" : "Ready to execute"}</span>
+              <span className="font-mono tabular-nums text-[#68756d]">Turn {turnCount} <span className="text-[#a0aaa3">/</span> {data.config.maxTurnsPerTest}</span>
+              <span className="font-mono tabular-nums text-[#68756d]">{data.progress.completed} of {data.progress.total} probes evaluated</span>
+            </div>
+
+            <div className="flex min-h-82.5 flex-1 flex-col gap-4 bg-[#fcfdfb] p-4 sm:p-5">
+              {activeTest ? activeTest.conversation.map((turn, index) => {
+                const isProbe = turn.role === "adversight";
+                return (
+                  <article key={`${activeTest.id}-${index}`} className={`max-w-[92%] rounded-md border px-4 py-3 sm:max-w-[82%] ${isProbe ? "self-start border-[#dce6df] bg-white" : "self-end border-[#d9e4de] bg-[#f0f5f1]"}`}>
+                    <div className="mb-2 flex items-center justify-between gap-6 border-b border-[#e8ede8] pb-2">
+                      <span className={`flex items-center gap-2 text-[11px] font-semibold ${isProbe ? "text-[#65746b]" : "text-[#34644f]"}`}>{isProbe ? <Shield size={13} /> : <Bot size={13} />}{isProbe ? "AdverSight · attack probe" : `${data.config.targetAgent.name} · response`}</span>
+                      <time className="font-mono text-[10px] tabular-nums text-[#87928a]">{turn.timestamp}</time>
+                    </div>
+                    <p className="whitespace-pre-wrap text-[13px] leading-[1.65] text-[#34413a]">{turn.content}</p>
+                    <p className="mt-2 font-mono text-[10px] text-[#9aa49d]">Turn {Math.floor(index / 2) + 1}</p>
+                  </article>
+                );
+              }) : (
+                <div className="flex flex-1 flex-col items-center justify-center text-center">
+                  <div className="mb-3 flex size-10 items-center justify-center rounded-md bg-[#edf3ee] text-[#47765c]"><ShieldCheck size={20} /></div>
+                  <p className="text-sm font-semibold text-[#3a4840]">{queuedGoalCount === 0 ? "No queued probes for this goal" : "Choose a goal to prepare an attack"}</p>
+                  <p className="mt-1 max-w-sm text-xs leading-5 text-[#77837b]">{queuedGoalCount === 0 ? "Select another strategy with queued probes to start a new attack." : "The live conversation and evaluation outcome will appear here when the run starts."}</p>
+                </div>
+              )}
+              {isRunning && activeTest?.status === "running" && (
+                <div role="status" className="flex items-center gap-2 self-start rounded-md border border-[#e6e3d9] bg-[#fffdf7] px-3 py-2.5 text-xs text-[#7c6b48]"><LoaderCircle size={14} className="animate-spin text-[#a8792d]" />Waiting for the target agent response…</div>
+              )}
+            </div>
+
+            {verdict && (
+              <div className={`flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3.5 sm:px-5 ${verdict === "failed" ? "border-[#eadbd4] bg-[#fff8f5]" : "border-[#dce9de] bg-[#f5faf5]"}`}>
+                <div className="flex min-w-0 items-start gap-2.5">
+                  {verdict === "failed" ? <XCircle size={17} className="mt-0.5 shrink-0 text-[#b55e4c]" /> : <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-[#4b815b]" />}
+                  <div className="min-w-0"><p className={`text-sm font-semibold ${verdict === "failed" ? "text-[#8e4739]" : "text-[#376c48]"}`}>{verdict === "failed" ? activeTest?.failureType ?? "Security failure detected" : "Attack resisted"}</p><p className="mt-0.5 text-xs leading-5 text-[#6f7972]">{verdict === "failed" ? activeTest?.failureDescription ?? "The target agent crossed a defined security boundary." : "The agent maintained its expected security boundaries for this probe."}</p></div>
+                </div>
+                {activeFailure && <button onClick={() => setSelectedFailure(activeFailure)} className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[#39674f] hover:text-[#234d38] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#417b63]">Inspect failure <ArrowRight size={14} /></button>}
+              </div>
+            )}
+          </section>
+        </section>
+
+        <section className="border-t border-[#dfe5df] pt-6">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-[#718078]">03 / Findings</p>
+              <div className="mt-1 flex items-baseline gap-2.5"><h2 className="text-lg font-semibold">Failures</h2><span className="font-mono text-xs tabular-nums text-[#7a867e]">{data.failures.length} recorded</span></div>
+            </div>
+            <label className="relative block w-full sm:w-65">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#87938b]" />
+              <input value={failureSearch} onChange={(event) => setFailureSearch(event.target.value)} placeholder="Search failures" className="h-9 w-full rounded-md border border-[#d8e0d8] bg-white pl-9 pr-3 text-sm text-[#344139] outline-none transition placeholder:text-[#98a29b] focus:border-[#52816b] focus:ring-2 focus:ring-[#52816b]/15" />
+            </label>
+          </div>
+
+          {filteredFailures.length === 0 ? (
+            <div className="border border-dashed border-[#d8e0d8] bg-white px-5 py-10 text-center">
+              <ShieldCheck size={22} className="mx-auto text-[#5b8668]" />
+              <p className="mt-2 text-sm font-semibold text-[#435047]">{data.failures.length ? "No failures match this search" : "No failures recorded"}</p>
+              <p className="mt-1 text-xs text-[#7b877f]">{data.failures.length ? "Try a different strategy, test ID, or severity." : "Run an attack to see any security findings here."}</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-[#e8ece8] border-y border-[#dfe5df] bg-white">
+              {filteredFailures.map((failure) => (
+                <article key={failure.id} className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-5">
+                  <button onClick={() => setSelectedFailure(failure)} className="min-w-0 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#417b63]">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className={`border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.07em] ${failure.severity === "critical" || failure.severity === "high" ? "border-[#e7d1ca] bg-[#fcf1ed] text-[#9a5141]" : "border-[#eadfca] bg-[#fbf6e9] text-[#8c713d]"}`}>{failure.severity}</span>
+                      <span className="truncate text-sm font-semibold text-[#2e3a33]">{failure.type}</span>
+                      <span className="font-mono text-[10px] tabular-nums text-[#869189]">#{String(failure.testNumber).padStart(2, "0")}</span>
+                    </span>
+                    <span className="mt-1.5 block line-clamp-2 max-w-4xl text-xs leading-5 text-[#69766e]">{failure.description}</span>
+                    <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-[#8a958d]"><span>{failure.strategy.replace(/_/g, " ")}</span><span>{failure.timestamp}</span>{failure.toolCalls?.[0] && <span>{failure.toolCalls[0].name}()</span>}</span>
+                  </button>
+                  <div className="flex items-center gap-2 sm:justify-end">
+                    <button onClick={() => setSelectedFailure(failure)} className="h-8 rounded-md border border-[#d8e0d8] px-3 text-xs font-semibold text-[#536159] transition hover:bg-[#f5f8f5] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#417b63]">Inspect</button>
+                    <button onClick={() => setSelectedFailure(failure)} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#e9f1eb] px-3 text-xs font-semibold text-[#37674d] transition hover:bg-[#dce9df] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#417b63]"><RotateCcw size={13} />Replay</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[#dfe5df] pt-4 text-xs text-[#7c8880]">
+          <span>{data.progress.completed} probes evaluated in this session</span>
+          <span className="flex items-center gap-2 font-mono text-[10px]"><Clock3 size={12} /> Session {data.sessionId}</span>
+        </footer>
       </main>
 
-      {/* Failure Evidence Modal */}
-      <FailureDetails
-        failure={selectedFailure}
-        onClose={() => setSelectedFailure(null)}
-      />
-    </DashboardLayout>
+      <FailureDetails failure={selectedFailure} onClose={() => setSelectedFailure(null)} />
+    </div>
   );
 }
