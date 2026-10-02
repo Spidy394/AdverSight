@@ -39,10 +39,6 @@ export function Navbar() {
               <span className="text-[15px] font-bold text-[#202a2a] tracking-tight font-sans group-hover:text-[#2c674f] transition-colors">
                 AdverSight
               </span>
-              <span className="hidden sm:inline-flex items-center gap-1 border-l border-[#dfe5df] pl-2.5 font-mono text-[10px] uppercase tracking-wider text-[#65736d]">
-                <span className="size-1.5 rounded-full bg-[#37735a] animate-pulse" />
-                Autonomous QA
-              </span>
             </div>
           </Link>
 

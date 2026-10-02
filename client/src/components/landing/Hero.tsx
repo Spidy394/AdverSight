@@ -131,20 +131,7 @@ export function Hero() {
       </div>
 
       {/* Eyebrow Pill with Pulsing Signal Indicator */}
-      <motion.div
-        initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="inline-flex items-center gap-2 rounded-full border border-[#dfe5df] bg-white px-3.5 py-1 mb-6 shadow-2xs"
-      >
-        <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#37735a] opacity-75" />
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-[#37735a]" />
-        </span>
-        <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-[#3c5a4b]">
-          Autonomous Adversarial QA &bull; Agent Behavior Invariants
-        </span>
-      </motion.div>
+      
 
       {/* Agency Monumental Headline (Max 2 lines, never wrapped into 5 lines) */}
       <motion.h1
