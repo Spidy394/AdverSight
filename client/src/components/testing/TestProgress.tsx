@@ -1,5 +1,4 @@
 import { type TestProgress } from "@/types/testing";
-import { cn } from "@/lib/utils";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
 interface TestProgressProps {

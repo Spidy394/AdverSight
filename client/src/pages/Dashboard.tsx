@@ -1,11 +1,11 @@
 import { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { AnimatePresence } from "motion/react";
 
 // Data
 import { mockDashboardData } from "@/data/mockData";
 
 // Types
-import type { DashboardData, DashboardStatus, Failure, TestCase } from "@/types/testing";
+import type { DashboardData, Failure, TestCase } from "@/types/testing";
 
 // Components
 import { Header } from "@/components/layout/Header";
@@ -24,7 +24,6 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 

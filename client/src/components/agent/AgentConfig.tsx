@@ -1,14 +1,11 @@
 import { useState } from "react";
 import { motion } from "motion/react";
 import {
-  type TargetAgent,
   type TestSessionConfig,
   type AttackCategory,
   type TestMode,
 } from "@/types/testing";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   ChevronDown,
   Wifi,
@@ -75,9 +72,6 @@ export function AgentConfig({ config, onStart, isRunning }: AgentConfigProps) {
       return next;
     });
   };
-
-  const agent =
-    AGENT_OPTIONS.find((a) => a.id === selectedAgent) ?? AGENT_OPTIONS[0];
 
   return (
     <aside className="flex flex-col gap-4">
