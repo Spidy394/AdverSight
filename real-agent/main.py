@@ -109,4 +109,7 @@ async def chat_hardened(req: ChatRequest) -> ChatResponse:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=9000, reload=True)
+    # Render (and most PaaS) inject the listen port via $PORT. Fall back to 9000 so
+    # local development is unchanged.
+    port = int(os.environ.get("PORT", "9000"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
