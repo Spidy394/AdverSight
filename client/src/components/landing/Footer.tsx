@@ -13,17 +13,31 @@ export function Footer() {
           </p>
         </div>
 
-        <nav aria-label="Footer links" className="flex items-center gap-6 text-[#65736d]">
-          <a href="#how-it-works" className="hover:text-[#202a2a] transition-colors">
-            How it works
-          </a>
-          <a href="#capabilities" className="hover:text-[#202a2a] transition-colors">
-            Capabilities
-          </a>
-          <Link to="/dashboard" className="text-[#2c674f] font-semibold hover:text-[#254f40] transition-colors">
-            Console &rarr;
-          </Link>
-        </nav>
+       <nav
+  aria-label="Footer links"
+  className="flex items-center gap-8 text-[18px] text-[#65736d]"
+>
+  <a
+    href="#how-it-works"
+    className="hover:text-[#202a2a] transition-colors"
+  >
+    How it works
+  </a>
+
+  <a
+    href="#capabilities"
+    className="hover:text-[#202a2a] transition-colors"
+  >
+    Capabilities
+  </a>
+
+  <Link
+    to="/dashboard"
+    className="text-[#2c674f] font-semibold hover:text-[#254f40] transition-colors"
+  >
+    Console &rarr;
+  </Link>
+</nav>
 
         <div className="text-[#849089]">
           BugLordz &bull; HackSpire &apos;26
