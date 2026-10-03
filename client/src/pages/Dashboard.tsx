@@ -13,7 +13,6 @@ import {
 import { Header } from "@/components/layout/Header";
 import { AgentConfig } from "@/components/agent/AgentConfig";
 import { LiveConversation } from "@/components/conversation/LiveConversation";
-import { ObservabilityLogs } from "@/components/logs/ObservabilityLogs";
 import { TestProgressBar } from "@/components/testing/TestProgress";
 import { FailureCard } from "@/components/results/FailureCard";
 import { FailureDetails } from "@/components/results/FailureDetails";
@@ -984,7 +983,6 @@ export default function Dashboard() {
               {/* Telemetry Logs */}
               {activeBottomTab === "logs" && (
                 <div>
-                  <ObservabilityLogs logs={data.logs} />
                 </div>
               )}
             </div>

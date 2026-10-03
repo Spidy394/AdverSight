@@ -57,23 +57,24 @@ export function Navbar() {
             aria-label="AdverSight - scroll to top"
           >
             <div
-              className={`flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg transition-all duration-500 group-hover:scale-105 ${
-                isScrolled
-                  ? "bg-[#e7efeb] border border-[#d2dfd8]"
-                  : "bg-white/30 border border-white/40 backdrop-blur-sm"
-              }`}
-            >
-              <img
-                src="/logo.png"
-                alt="AdverSight logo"
-                className="size-9 object-contain"
-              />
-            </div>
-            <span
-              className={`text-[15px] font-bold tracking-tight font-sans transition-colors duration-300 text-[#202a2a] group-hover:text-[#2c674f]`}
-            >
-              AdverSight
-            </span>
+  className={`flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl transition-all duration-500 group-hover:scale-105 ${
+    isScrolled
+      ? "bg-[#e7efeb] border border-[#d2dfd8]"
+      : "bg-white/30 border border-white/40 backdrop-blur-sm"
+  }`}
+>
+  <img
+    src="/logo.png"
+    alt="AdverSight logo"
+    className="size-11 object-contain"
+  />
+</div>
+
+<span
+  className={`text-[20px] font-bold tracking-tight font-sans transition-colors duration-300 text-[#202a2a] group-hover:text-[#2c674f]`}
+>
+  AdverSight
+</span>
           </a>
 
           {/* Center Links */}
