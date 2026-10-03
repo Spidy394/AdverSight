@@ -26,6 +26,11 @@ def _conflict(exc: service.SessionStateError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
+def _llm_unavailable(exc: service.LLMConfigurationError) -> HTTPException:
+    """503: the LLM path was requested but the backend is not configured for it."""
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+
+
 @router.post("", response_model=SessionDashboard, status_code=status.HTTP_201_CREATED)
 async def create_session(payload: SessionCreate) -> SessionDashboard:
     """Create a testing session in ``idle`` state."""
@@ -48,7 +53,8 @@ async def start_session(session_id: str) -> SessionDashboard:
     """Transition a session from ``idle`` to ``testing``.
 
     Idempotent while already testing. Returns 409 once the session has
-    completed, since it cannot be restarted.
+    completed, since it cannot be restarted. Returns 503 when the LLM path was
+    explicitly requested but is not usable, leaving the session ``idle``.
     """
     try:
         record = await service.start_session(session_id)
@@ -56,6 +62,8 @@ async def start_session(session_id: str) -> SessionDashboard:
         raise _not_found(exc) from exc
     except service.SessionStateError as exc:
         raise _conflict(exc) from exc
+    except service.LLMConfigurationError as exc:
+        raise _llm_unavailable(exc) from exc
     return service.build_dashboard(record)
 
 

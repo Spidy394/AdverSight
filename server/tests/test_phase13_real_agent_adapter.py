@@ -559,7 +559,7 @@ async def test_concurrent_sessions_isolated():
         target_agent={
             "id": "agent_a",
             "name": "Target Agent A",
-            "endpoint": "http://127.0.0.1:8000/agent/flight-vulnerable",
+            "endpoint": "http://localhost:8000/agent/flight-vulnerable",
             "agent_type": "tool_calling",
         },
         attack_categories=[AttackCategory.UNAUTHORIZED_ACTION],
@@ -571,7 +571,7 @@ async def test_concurrent_sessions_isolated():
         target_agent={
             "id": "agent_b",
             "name": "Target Agent B",
-            "endpoint": "http://127.0.0.1:8000/agent/flight-secure",
+            "endpoint": "http://localhost:8000/agent/flight-secure",
             "agent_type": "tool_calling",
         },
         attack_categories=[AttackCategory.POLICY_VIOLATION],

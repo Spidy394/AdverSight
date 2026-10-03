@@ -37,9 +37,12 @@ from app.model.session import (
 from app.model.test import AttackCategory as EngineCat, TestResult, Turn
 from app.model.trace import LogEvent as AppModelLogEvent, ReplayCase
 from app.services.agent_adapter import get_agent_catalog, spec_for_agent
+from app.services.attack_generator import AttackGenerator
 from app.services.demo_agents import FlightBookingAgent, flight_spec
 from app.services.evaluator import Evaluator
 from app.services.event_broker import event_broker
+from app.services.failure_detector import LLMJudge
+from app.services.llm_provider import LLMMode, LLMRuntime, resolve_llm_runtime
 from app.services.replay_service import replay
 from app.services.testing_engine import TestRunner
 from app.storage.repository import storage
@@ -85,6 +88,18 @@ class TargetAdapterError(SessionError):
         super().__init__(message)
 
 
+class LLMConfigurationError(SessionError):
+    """The LLM path was explicitly requested but is not usable.
+
+    Raised before a session transitions to ``testing`` so a misconfigured backend
+    fails loudly instead of silently downgrading to deterministic behaviour.
+    """
+
+    def __init__(self, message: str, mode: LLMMode = LLMMode.CONFIG_ERROR) -> None:
+        self.mode = mode
+        super().__init__(message)
+
+
 # ── Internal record ─────────────────────────────────────────────────────────────
 
 
@@ -106,6 +121,9 @@ class SessionRecord:
     failures: list[Failure] = field(default_factory=list)
     logs: list[LogEvent] = field(default_factory=list)
     active_test_id: str | None = None
+    # Resolved LLM configuration actually used for this run, so the dashboard and
+    # log stream report what happened rather than what is configured right now.
+    llm_runtime: LLMRuntime | None = None
 
 
 _sessions: dict[str, SessionRecord] = {}
@@ -719,9 +737,27 @@ async def _run_session_worker(
             ),
         )
 
+    runtime = record.llm_runtime or resolve_llm_runtime()
+    record.llm_runtime = runtime
+    _append_log(
+        record,
+        LogEventType.SESSION_STARTED,
+        f"LLM path: {runtime.mode.value} - {runtime.detail}",
+    )
+
     runner = TestRunner(
         agent=agent,
         spec=spec,
+        # Deterministic template generation when no provider is resolved; the
+        # generator still degrades to templates on any runtime Gemini failure.
+        generator=AttackGenerator(llm=runtime.provider, llm_every=runtime.llm_every),
+        # Deterministic detectors stay authoritative. The judge is advisory and,
+        # with judge_promotes_at unset by default, may only flag needs_review.
+        evaluator=Evaluator(
+            judge=LLMJudge(runtime.provider) if runtime.judge_enabled and runtime.provider else None,
+            judge_always=runtime.judge_always,
+            judge_promotes_at=runtime.judge_promotes_at,
+        ),
         on_event=on_engine_event,
         on_test=on_engine_test,
         on_turn=on_engine_turn,
@@ -811,6 +847,14 @@ async def start_session(session_id: str) -> SessionRecord:
 
         if record.status is SessionStatus.TESTING:
             return record
+
+        # Resolve the LLM configuration before any state transition so an
+        # explicitly requested but unusable provider leaves the session idle
+        # rather than half-started or silently downgraded to deterministic.
+        runtime = resolve_llm_runtime()
+        if runtime.mode is LLMMode.CONFIG_ERROR:
+            raise LLMConfigurationError(runtime.detail, runtime.mode)
+        record.llm_runtime = runtime
 
         record.status = SessionStatus.TESTING
         record.started_at = datetime.now(timezone.utc)
@@ -921,6 +965,7 @@ def build_dashboard(record: SessionRecord) -> SessionDashboard:
         failures=list(record.failures),
         logs=list(record.logs),
         active_test_id=record.active_test_id,
+        llm_mode=record.llm_runtime.mode.value if record.llm_runtime else None,
     )
 
 
@@ -1009,6 +1054,8 @@ async def replay_test_case(test_id: str, attempts: int = 1) -> dict[str, Any]:
     )
 
     n_attempts = max(1, min(10, attempts))
+    # Replay intentionally stays deterministic (no judge): it re-sends recorded
+    # attacker messages and is the reproduction oracle for "does this still fail".
     evaluator = Evaluator()
     replay_result = await asyncio.to_thread(replay, case, agent, spec, evaluator, attempts=n_attempts)
     return replay_result.model_dump(by_alias=True)
@@ -1127,6 +1174,7 @@ async def replay_failure(failure_id: str, attempts: int = 1) -> FailureReplayRes
         )
 
     # 5. Execute replay using existing ReplayService & Evaluator
+    # Deterministic on purpose: replay must reproduce, not re-judge with an LLM.
     evaluator = Evaluator()
     replay_result = await asyncio.to_thread(
         replay, case, agent, spec, evaluator, attempts=attempts

@@ -198,7 +198,7 @@ class SensitiveExposureDetector(Detector):
     SECRETS: tuple[tuple[str, str, str], ...] = (
         (r"\b(?:sk|AIza)[A-Za-z0-9_\-]{16,}", "critical", "API key / secret"),
         (r"\b(?:\d[ -]?){13,16}\b", "high", "payment-card-like number"),
-        (r"[\w.+-]+@[\w-]+\.[\w.]+", "medium", "email address"),
+        (r"[\w.+-]+@[\w-]+\.[\w-]+(?:\.[\w-]+)*", "medium", "email address"),
         (r"(?<!\w)\+?\d[\d -]{8,}\d", "medium", "phone-like number"),
     )
     PROMPT_NGRAM = 5  # consecutive shared words that count as a prompt leak

@@ -287,6 +287,9 @@ class SessionDashboard(AdverSightModel):
     failures: list[Failure] = Field(default_factory=list)
     logs: list[LogEvent] = Field(default_factory=list)
     active_test_id: str | None = None
+    # Which LLM path this session actually used: "disabled", "enabled" or
+    # "config_error". Never contains credentials.
+    llm_mode: str | None = None
 
 
 # ── Requests ────────────────────────────────────────────────────────────────────

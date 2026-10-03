@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.142.2",
+    "httpx>=0.28.1",
     "pydantic-settings>=2.15.0",
     "uvicorn[standard]>=0.54.0",
 ]
@@ -24,9 +25,15 @@ module-root = "."
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
+    "anyio>=4.15.1",
     "pytest>=8.4.2",
 ]
+
+[tool.pytest.ini_options]
+# The package sits at ./app (not ./src/app), so the project root must be on
+# sys.path for `import app` to resolve regardless of install mode.
+pythonpath = ["."]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]

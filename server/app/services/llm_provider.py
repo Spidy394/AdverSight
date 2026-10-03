@@ -7,6 +7,8 @@ API keys are loaded strictly from environment variables (e.g. GEMINI_API_KEY).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import StrEnum
 import logging
 import os
 from typing import Any
@@ -129,3 +131,204 @@ def get_llm_provider() -> LLMProvider | None:
     if api_key:
         return GeminiProvider(api_key=api_key)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Runtime configuration resolution
+#
+# The provider above is deliberately dumb: it answers "is there a key?", not
+# "should this deployment use an LLM?". ``resolve_llm_runtime`` owns that
+# decision so the session runner never has to guess, and so a missing key is a
+# first-class, reportable configuration outcome instead of a silent downgrade
+# to deterministic behaviour.
+# ---------------------------------------------------------------------------
+
+
+class LLMMode(StrEnum):
+    """How the LLM path is configured for the current process."""
+
+    DISABLED = "disabled"
+    ENABLED = "enabled"
+    CONFIG_ERROR = "config_error"
+
+
+@dataclass(frozen=True)
+class LLMRuntime:
+    """Immutable, credential-free description of the resolved LLM configuration.
+
+    ``detail`` is safe to log, publish on the event stream and return over HTTP:
+    it is built from variable names and mode names only, never from a key value.
+    """
+
+    mode: LLMMode
+    provider: LLMProvider | None
+    model: str
+    llm_every: int
+    judge_enabled: bool
+    judge_always: bool
+    judge_promotes_at: float | None
+    detail: str
+
+    @property
+    def generator_enabled(self) -> bool:
+        return self.provider is not None and self.mode is LLMMode.ENABLED
+
+
+def _env_flag(name: str, default: str) -> str:
+    raw = os.environ.get(name)
+    value = raw.strip().lower() if raw else ""
+    return value or default
+
+
+def _positive_int(name: str, default: int) -> int:
+    """Read a positive int from the environment, falling back on anything unusable."""
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw.strip())
+    except (TypeError, ValueError):
+        logger.warning("%s=%r is not an integer; using %d.", name, raw, default)
+        return default
+    if value < 1:
+        logger.warning("%s=%r must be >= 1; using %d.", name, raw, default)
+        return default
+    return value
+
+
+def _optional_threshold(name: str) -> float | None:
+    """Read an optional 0..1 float. Unset means the judge may never fail a test."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        value = float(raw.strip())
+    except (TypeError, ValueError):
+        logger.warning("%s=%r is not a number; judge will stay review-only.", name, raw)
+        return None
+    if not 0.0 <= value <= 1.0:
+        logger.warning("%s=%r must be within 0..1; judge will stay review-only.", name, raw)
+        return None
+    return value
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    value = raw.strip().lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("0", "false", "no", "off"):
+        return False
+    logger.warning("%s=%r is not a boolean; using %s.", name, raw, default)
+    return default
+
+
+def resolve_llm_runtime() -> LLMRuntime:
+    """Resolve the LLM configuration for a test run.
+
+    Controlled entirely by backend environment variables:
+
+    ``ADVERSIGHT_LLM``
+        ``off`` (default) keeps generation and evaluation fully deterministic.
+        ``auto`` enables the LLM path only when a key is present. ``on`` requires
+        a key and reports ``CONFIG_ERROR`` when one is missing, so a misconfigured
+        deployment fails loudly instead of quietly pretending to be LLM-backed.
+    ``GEMINI_API_KEY``
+        Provider credential. Never logged, never returned, never serialized.
+    ``GEMINI_MODEL``
+        Model id, defaults to ``GeminiProvider.DEFAULT_MODEL``.
+    ``ADVERSIGHT_LLM_EVERY``
+        Call the generator every Nth scenario (default 2). Higher is cheaper and
+        keeps more deterministic template coverage.
+    ``ADVERSIGHT_LLM_JUDGE``
+        ``auto`` (default) enables the judge whenever the provider is enabled;
+        ``on``/``off`` force it.
+    ``ADVERSIGHT_JUDGE_ALWAYS``
+        When true the judge is consulted on every inconclusive verdict instead of
+        only on weak detector signals. Off by default; raises judge latency.
+    ``ADVERSIGHT_JUDGE_PROMOTES_AT``
+        Optional 0..1 confidence at which a judge verdict may create a finding.
+        Unset by default, which confines the judge to flagging ``needs_review``;
+        deterministic detectors remain the only source of FAIL verdicts.
+
+    This function never raises: an unusable configuration is reported through
+    :attr:`LLMRuntime.mode` so callers can surface it as a clear error.
+    """
+    model = os.environ.get("GEMINI_MODEL") or GeminiProvider.DEFAULT_MODEL
+    llm_every = _positive_int("ADVERSIGHT_LLM_EVERY", 2)
+    promotes_at = _optional_threshold("ADVERSIGHT_JUDGE_PROMOTES_AT")
+    judge_always = _env_bool("ADVERSIGHT_JUDGE_ALWAYS", False)
+
+    requested = _env_flag("ADVERSIGHT_LLM", "off")
+    if requested not in ("on", "off", "auto"):
+        logger.warning(
+            "ADVERSIGHT_LLM=%r is not one of on/off/auto; treating as off.", requested
+        )
+        requested = "off"
+
+    api_key = os.environ.get("GEMINI_API_KEY") or ""
+
+    if requested == "on" and not api_key:
+        return LLMRuntime(
+            mode=LLMMode.CONFIG_ERROR,
+            provider=None,
+            model=model,
+            llm_every=llm_every,
+            judge_enabled=False,
+            judge_always=False,
+            judge_promotes_at=promotes_at,
+            detail=(
+                "ADVERSIGHT_LLM=on requires GEMINI_API_KEY to be set in the backend "
+                "environment. Set the key, or set ADVERSIGHT_LLM=off to run "
+                "deterministically."
+            ),
+        )
+
+    enabled = requested == "on" or (requested == "auto" and bool(api_key))
+    if not enabled:
+        reason = (
+            "ADVERSIGHT_LLM=off; generation and evaluation are fully deterministic."
+            if requested == "off"
+            else "ADVERSIGHT_LLM=auto and GEMINI_API_KEY is not set; running deterministic."
+        )
+        return LLMRuntime(
+            mode=LLMMode.DISABLED,
+            provider=None,
+            model=model,
+            llm_every=llm_every,
+            judge_enabled=False,
+            judge_always=False,
+            judge_promotes_at=promotes_at,
+            detail=reason,
+        )
+
+    judge_requested = _env_flag("ADVERSIGHT_LLM_JUDGE", "auto")
+    if judge_requested not in ("on", "off", "auto"):
+        judge_requested = "auto"
+    judge_enabled = judge_requested == "on" or judge_requested == "auto"
+
+    if not judge_enabled:
+        judge_scope = "disabled"
+    elif promotes_at is None:
+        judge_scope = "enabled (review-only)"
+    else:
+        judge_scope = f"enabled (may promote findings at >={promotes_at})"
+
+    judge_always = judge_always and judge_enabled
+
+    return LLMRuntime(
+        mode=LLMMode.ENABLED,
+        provider=GeminiProvider(api_key=api_key, model=model),
+        model=model,
+        llm_every=llm_every,
+        judge_enabled=judge_enabled,
+        judge_always=judge_always,
+        judge_promotes_at=promotes_at,
+        detail=(
+            f"Gemini enabled via ADVERSIGHT_LLM={requested} (model {model}); "
+            f"generator calls Gemini every {llm_every} scenarios, judge "
+            f"{judge_scope}, deterministic detectors remain authoritative."
+        ),
+    )

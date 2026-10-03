@@ -235,12 +235,6 @@ class TestSensitiveExposure:
         out = self.det.check(ctx([turn("x", text)], TargetPolicy()))
         assert out and out[0].severity == severity
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: SECRETS email regex ends in [\\w.]+, so a sentence-final period is captured "
-        "('bob@example.com.') and no longer matches the user's own text. Fix the TLD part, "
-        "e.g. [\\w-]+(?:\\.[\\w-]+)+, then remove this xfail.",
-    )
     def test_user_supplied_email_is_not_a_leak(self):
         t = turn("my email is bob@example.com", "Got it: bob@example.com.")
         assert self.det.check(ctx([t], TargetPolicy())) == []

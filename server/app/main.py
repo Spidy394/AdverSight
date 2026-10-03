@@ -4,8 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agents import router as agents_router
 from app.api.failures import router as failures_router
+from app.api.report import router as report_router
+
 from app.api.session import router as session_router
 from app.api.test import router as test_router
+from app.services.llm_provider import resolve_llm_runtime
 
 # Default dev origins for Vite/Next/local clients, extensible via CORS_ORIGINS env var
 DEFAULT_ORIGINS = [
@@ -51,9 +54,13 @@ for prefix in ("/api/v1", "/api"):
 @app.get("/api/v1/health")
 async def health_check():
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    runtime = resolve_llm_runtime()
     return {
         "status": "ok",
         "service": "adversight-api",
         "version": "0.1.0",
         "geminiConfigured": bool(gemini_key),
+        # Which LLM path sessions will actually use, and why. Credential-free.
+        "llmMode": runtime.mode.value,
+        "llmDetail": runtime.detail,
     }
