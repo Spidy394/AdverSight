@@ -48,12 +48,12 @@ export function CTASection() {
           <div className="relative z-10 px-6 max-w-4xl mx-auto text-center flex flex-col items-center">
 
             {/* Eyebrow pill */}
-            <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-[#2c674f]/10 bg-[#2c674f]/5 px-4 py-1.5 text-sm font-medium text-[#2c674f] backdrop-blur-sm">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#2c674f]/15 bg-white/60 px-4 py-1.5 text-xs font-mono font-semibold uppercase tracking-widest text-[#2c674f] backdrop-blur-sm">
               <span className="relative flex h-2 w-2" aria-hidden="true">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#37735a] opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-[#37735a]" />
               </span>
-              Adversarial QA Engine · Live
+              Continuous Evaluation
             </div>
 
             {/* Display headline — serif for editorial weight at large sizes */}

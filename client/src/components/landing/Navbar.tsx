@@ -15,6 +15,29 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  const navItems = [
+    { href: "#how-it-works", label: "How it works" },
+    { href: "#capabilities", label: "Capabilities" },
+    { href: "#evidence", label: "Failure evidence" },
+  ];
+
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (href.startsWith("#")) {
+      e.preventDefault();
+      setMobileMenuOpen(false);
+      if (href === "#hero") {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        window.history.pushState(null, "", window.location.pathname);
+        return;
+      }
+      const target = document.querySelector(href);
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth" });
+        window.history.pushState(null, "", href);
+      }
+    }
+  };
+
   return (
     <header className="fixed top-0 left-0 right-0 z-50 w-full transition-all duration-500">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-4 pb-2">
@@ -26,8 +49,13 @@ export function Navbar() {
               : "bg-transparent border border-transparent"
           }`}
         >
-          {/* Brand */}
-          <Link to="/" className="flex items-center gap-3 group focus-visible:outline-none">
+          {/* Brand — clicks scroll to hero section */}
+          <a
+            href="#hero"
+            onClick={(e) => handleNavClick(e, "#hero")}
+            className="flex items-center gap-3 group focus-visible:outline-none cursor-pointer"
+            aria-label="AdverSight - scroll to top"
+          >
             <div
               className={`flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg transition-all duration-500 group-hover:scale-105 ${
                 isScrolled
@@ -42,30 +70,26 @@ export function Navbar() {
               />
             </div>
             <span
-              className={`text-[15px] font-bold tracking-tight font-sans transition-colors duration-300 ${
-                isScrolled ? "text-[#202a2a]" : "text-[#202a2a]"
-              } group-hover:text-[#2c674f]`}
+              className={`text-[15px] font-bold tracking-tight font-sans transition-colors duration-300 text-[#202a2a] group-hover:text-[#2c674f]`}
             >
               AdverSight
             </span>
-          </Link>
+          </a>
 
           {/* Center Links */}
           <div className="hidden md:flex items-center gap-7 text-xs font-medium">
-            {["How it works", "Capabilities", "Failure evidence"].map((label, i) => {
-              const hrefs = ["#how-it-works", "#capabilities", "#evidence"];
-              return (
-                <a
-                  key={i}
-                  href={hrefs[i]}
-                  className={`transition-colors duration-200 hover:text-[#2c674f] ${
-                    isScrolled ? "text-[#65736d]" : "text-[#3a4e46]"
-                  }`}
-                >
-                  {label}
-                </a>
-              );
-            })}
+            {navItems.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                onClick={(e) => handleNavClick(e, item.href)}
+                className={`transition-colors duration-200 hover:text-[#2c674f] cursor-pointer ${
+                  isScrolled ? "text-[#65736d]" : "text-[#3a4e46]"
+                }`}
+              >
+                {item.label}
+              </a>
+            ))}
           </div>
 
           {/* Right CTA */}
@@ -111,16 +135,12 @@ export function Navbar() {
             transition={{ duration: 0.15 }}
             className="md:hidden mx-4 mt-1 rounded-2xl border border-[#dfe5df] bg-[#f8faf8]/95 backdrop-blur-xl p-4 shadow-xl text-sm space-y-3"
           >
-            {[
-              { href: "#how-it-works", label: "How it works" },
-              { href: "#capabilities", label: "Capabilities" },
-              { href: "#evidence", label: "Failure evidence" },
-            ].map((item) => (
+            {navItems.map((item) => (
               <a
                 key={item.href}
                 href={item.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className="block py-1 text-[#65736d] hover:text-[#202a2a] transition-colors"
+                onClick={(e) => handleNavClick(e, item.href)}
+                className="block py-1.5 text-xs font-medium text-[#65736d] hover:text-[#202a2a] transition-colors cursor-pointer"
               >
                 {item.label}
               </a>

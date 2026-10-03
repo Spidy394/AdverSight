@@ -187,3 +187,15 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #9baaa0;
 }
+
+/* Global Smooth Scrolling */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
