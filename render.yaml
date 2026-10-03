@@ -1,6 +1,7 @@
 services:
   # ---------------------------------------------
-  # Backend  — FastAPI / Python 3.14
+  # Backend — FastAPI / Python 3.14
+  # Frontend is hosted on Vercel: https://client-zeta-nine-99.vercel.app
   # ---------------------------------------------
   - type: web
     name: adversight-api
@@ -13,29 +14,10 @@ services:
 
     envVars:
       - key: GEMINI_API_KEY
-        sync: false
+        sync: false          # set manually in Render dashboard
+
+      - key: CORS_ORIGINS
+        value: "https://client-zeta-nine-99.vercel.app"
 
       - key: PYTHON_VERSION
         value: "3.14.0"
-
-  # ---------------------------------------------
-  # Frontend — React / Vite (Static Site)
-  # ---------------------------------------------
-  - type: web
-    name: adversight-client
-    runtime: static
-    rootDir: client
-    plan: free
-
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-
-    headers:
-      - path: /*
-        name: Cache-Control
-        value: no-cache
-
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
