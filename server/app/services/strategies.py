@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.model.test import AttackCategory
+from app.model.test import AttackCategory, TargetSpec
 from app.util.trace_commons import Resistance
 
 
@@ -149,3 +149,16 @@ def get_strategy(category: AttackCategory) -> Strategy:
 def render(template: str, *, action: str, asset: str, key: str, value: str) -> str:
     cap = action[:1].upper() + action[1:]
     return template.format(action=action, Action=cap, asset=asset, key=key, value=value)
+
+
+
+def build_slots(spec: TargetSpec) -> dict[str, str]:
+    """Template slots for a target. The single source of truth: the registry's strategies
+    and the attack generator both call this, so a probe reads the same wherever it is built."""
+    key, value = next(iter(spec.policy.context_facts.items()), ("details", "what I said"))
+    return {
+        "action": spec.protected_actions[0] if spec.protected_actions else "do the task",
+        "asset": spec.sensitive_assets[0] if spec.sensitive_assets else "the confidential records",
+        "key": key,
+        "value": value,
+    }

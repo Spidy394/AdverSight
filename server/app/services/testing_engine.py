@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Sequence
 from datetime import datetime
+from typing import Any
 
 from app.model.test import AttackCategory, AttackScenario, TargetSpec, TestResult, Turn
 from app.model.trace import LogEvent, SessionReport
