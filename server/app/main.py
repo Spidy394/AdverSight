@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agents import router as agents_router
+from app.api.strategies import router as strategies_router
 from app.api.failures import router as failures_router
 from app.api.session import router as session_router
 from app.api.test import router as test_router
@@ -44,6 +45,7 @@ for prefix in ("/api/v1", "/api"):
     app.include_router(failures_router, prefix=f"{prefix}/failures")
     app.include_router(test_router, prefix=f"{prefix}/tests")
     app.include_router(agents_router, prefix=f"{prefix}/agents")
+    app.include_router(strategies_router, prefix=f"{prefix}/strategies")
 
 
 @app.get("/health")

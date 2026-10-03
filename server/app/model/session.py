@@ -159,7 +159,7 @@ class ConversationTurn(AdverSightModel):
     content: str
     timestamp: str
     turn_number: int | None = None
-    tool_calls: list[ToolCall] | None = None
+    tool_calls: list["ToolCall"] | None = None
     latency_ms: float | None = None
 
 
@@ -186,7 +186,7 @@ class TestCase(AdverSightModel):
     conversation: list[ConversationTurn] = Field(default_factory=list)
     turns: list[ConversationTurn] = Field(default_factory=list)
     response: str | None = None
-    tool_calls: list[ToolCall] | None = None
+    tool_calls: list["ToolCall"] | None = None
     failure_id: str | None = None
     failure_type: str | None = None
     failure_description: str | None = None
@@ -213,7 +213,7 @@ class Failure(AdverSightModel):
     severity: Severity
     attack: str
     response: str
-    tool_calls: list[ToolCall] | None = None
+    tool_calls: list["ToolCall"] | None = None
     why_it_failed: str
     timestamp: str
     session_id: str | None = None
@@ -333,7 +333,7 @@ class ReplayAttemptDetail(AdverSightModel):
     message: str | None = None
     error: str | None = None
     response_text: str | None = None
-    tool_calls: list[ToolCall] | None = None
+    tool_calls: list["ToolCall"] | None = None
     evidence: dict[str, Any] | None = None
     timestamp: str | None = None
 
