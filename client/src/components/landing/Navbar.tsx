@@ -9,78 +9,90 @@ export function Navbar() {
 
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 20);
+      setIsScrolled(window.scrollY > 48);
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   return (
-    <header className="sticky top-0 z-50 w-full transition-all duration-300">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-3 pb-2">
+    <header className="fixed top-0 left-0 right-0 z-50 w-full transition-all duration-500">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-4 pb-2">
         <nav
           aria-label="Main Navigation"
-          className={`flex h-14 items-center justify-between px-4 sm:px-6 rounded-xl transition-all duration-300 ${
+          className={`flex h-14 items-center justify-between px-5 sm:px-6 rounded-2xl transition-all duration-500 ${
             isScrolled
-              ? "bg-white/90 backdrop-blur-md border border-[#dfe5df] shadow-[0_4px_20px_rgba(0,0,0,0.04)]"
-              : "bg-white/60 backdrop-blur-xs border border-[#dfe5df]/70"
+              ? "bg-[#f8faf8]/85 backdrop-blur-xl border border-[#dfe5df] shadow-[0_4px_24px_rgba(0,0,0,0.06)]"
+              : "bg-transparent border border-transparent"
           }`}
         >
-          {/* Left: Brand Identity */}
+          {/* Brand */}
           <Link to="/" className="flex items-center gap-3 group focus-visible:outline-none">
-            <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#e7efeb] border border-[#d2dfd8] transition-transform duration-300 group-hover:scale-105">
+            <div
+              className={`flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg transition-all duration-500 group-hover:scale-105 ${
+                isScrolled
+                  ? "bg-[#e7efeb] border border-[#d2dfd8]"
+                  : "bg-white/30 border border-white/40 backdrop-blur-sm"
+              }`}
+            >
               <img
                 src="/logo.png"
                 alt="AdverSight logo"
                 className="size-9 object-contain"
               />
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[15px] font-bold text-[#202a2a] tracking-tight font-sans group-hover:text-[#2c674f] transition-colors">
-                AdverSight
-              </span>
-            </div>
+            <span
+              className={`text-[15px] font-bold tracking-tight font-sans transition-colors duration-300 ${
+                isScrolled ? "text-[#202a2a]" : "text-[#202a2a]"
+              } group-hover:text-[#2c674f]`}
+            >
+              AdverSight
+            </span>
           </Link>
 
           {/* Center Links */}
-          <div className="hidden md:flex items-center gap-7 text-xs font-medium text-[#65736d]">
-            <a
-              href="#how-it-works"
-              className="hover:text-[#202a2a] transition-colors"
-            >
-              How it works
-            </a>
-            <a
-              href="#capabilities"
-              className="hover:text-[#202a2a] transition-colors"
-            >
-              Capabilities
-            </a>
-            <a
-              href="#evidence"
-              className="hover:text-[#202a2a] transition-colors"
-            >
-              Failure evidence
-            </a>
+          <div className="hidden md:flex items-center gap-7 text-xs font-medium">
+            {["How it works", "Capabilities", "Failure evidence"].map((label, i) => {
+              const hrefs = ["#how-it-works", "#capabilities", "#evidence"];
+              return (
+                <a
+                  key={i}
+                  href={hrefs[i]}
+                  className={`transition-colors duration-200 hover:text-[#2c674f] ${
+                    isScrolled ? "text-[#65736d]" : "text-[#3a4e46]"
+                  }`}
+                >
+                  {label}
+                </a>
+              );
+            })}
           </div>
 
-          {/* Right: Nested Island Button */}
+          {/* Right CTA */}
           <div className="flex items-center gap-3">
             <Link
               to="/dashboard"
-              className="group relative inline-flex items-center gap-2 pl-3.5 pr-1.5 py-1.5 rounded-lg text-xs font-semibold bg-[#202a2a] text-white hover:bg-[#2c674f] shadow-xs active:scale-[0.98] transition-all duration-200"
+              className={`group relative inline-flex items-center gap-2 pl-4 pr-1.5 py-1.5 rounded-xl text-xs font-semibold shadow-xs active:scale-[0.98] transition-all duration-300 ${
+                isScrolled
+                  ? "bg-[#202a2a] text-white hover:bg-[#2c674f]"
+                  : "bg-[#202a2a]/90 text-white hover:bg-[#2c674f] backdrop-blur-sm"
+              }`}
             >
               <span>Open Console</span>
-              <span className="size-6 rounded-md bg-white/15 flex items-center justify-center text-white transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5">
+              <span className="size-6 rounded-lg bg-white/15 flex items-center justify-center transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5">
                 <ArrowUpRight size={13} strokeWidth={2.5} />
               </span>
             </Link>
 
-            {/* Mobile Hamburger Toggle */}
+            {/* Mobile hamburger */}
             <button
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden size-8 inline-flex items-center justify-center rounded-lg border border-[#dfe5df] text-[#586660] hover:bg-[#f3f5f2]"
+              className={`md:hidden size-8 inline-flex items-center justify-center rounded-lg transition-colors ${
+                isScrolled
+                  ? "border border-[#dfe5df] text-[#586660] hover:bg-[#f3f5f2]"
+                  : "border border-white/30 text-[#3a4e46] hover:bg-white/20"
+              }`}
               aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? <X size={15} /> : <Menu size={15} />}
@@ -97,34 +109,27 @@ export function Navbar() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.15 }}
-            className="md:hidden mx-4 mt-1 rounded-xl border border-[#dfe5df] bg-white p-4 shadow-lg text-sm space-y-3"
+            className="md:hidden mx-4 mt-1 rounded-2xl border border-[#dfe5df] bg-[#f8faf8]/95 backdrop-blur-xl p-4 shadow-xl text-sm space-y-3"
           >
-            <a
-              href="#how-it-works"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block py-1 text-[#65736d] hover:text-[#202a2a]"
-            >
-              How it works
-            </a>
-            <a
-              href="#capabilities"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block py-1 text-[#65736d] hover:text-[#202a2a]"
-            >
-              Capabilities
-            </a>
-            <a
-              href="#evidence"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block py-1 text-[#65736d] hover:text-[#202a2a]"
-            >
-              Failure evidence
-            </a>
+            {[
+              { href: "#how-it-works", label: "How it works" },
+              { href: "#capabilities", label: "Capabilities" },
+              { href: "#evidence", label: "Failure evidence" },
+            ].map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className="block py-1 text-[#65736d] hover:text-[#202a2a] transition-colors"
+              >
+                {item.label}
+              </a>
+            ))}
             <div className="pt-2 border-t border-[#edf0ed]">
               <Link
                 to="/dashboard"
                 onClick={() => setMobileMenuOpen(false)}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-[#202a2a] py-2 text-xs font-semibold text-white"
+                className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-[#202a2a] py-2.5 text-xs font-semibold text-white"
               >
                 <span>Enter Console</span>
                 <ArrowUpRight size={13} />
